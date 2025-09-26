@@ -1,5 +1,5 @@
 # Multi-stage build for Laravel on AWS
-FROM php:8.3-fpm-alpine as base
+FROM php:8.3-fpm-alpine AS base
 
 # Install system dependencies
 RUN apk add --no-cache \
@@ -62,10 +62,13 @@ COPY . .
 RUN cp .env.example .env \
     && php artisan key:generate --ansi
 
+# Complete composer installation and generate docs (while dev deps are available)
+RUN composer dump-autoload --optimize \
+    && php artisan scribe:generate --no-interaction
 
 # Remove dev dependencies and re-optimize for production
 RUN composer install --no-dev --optimize-autoloader --no-scripts --no-interaction \
-    && composer dump-autoload --optimize && php artisan scribe:generate --no-interaction
+    && composer dump-autoload --optimize
 
 # Create required directories and set permissions (www-data user already exists in php:8.3-fpm-alpine)
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views \
