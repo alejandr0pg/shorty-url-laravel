@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
-use Illuminate\Http\Request;
 
 /**
  * Service for logging edge cases and monitoring system behavior
@@ -15,7 +14,7 @@ class LoggingService
      */
     public function logUrlValidationEdgeCase(string $url, array $validationResult, string $context = 'general'): void
     {
-        if (!$validationResult['valid']) {
+        if (! $validationResult['valid']) {
             Log::warning('URL Validation Edge Case', [
                 'context' => $context,
                 'original_url' => $url,
@@ -147,10 +146,11 @@ class LoggingService
     private function getSanitizedUrl(string $url): string
     {
         try {
-            $urlValidator = new UrlValidatorService();
+            $urlValidator = new UrlValidatorService;
+
             return $urlValidator->sanitizeUrl($url);
         } catch (\Exception $e) {
-            return '[Unable to sanitize: ' . $e->getMessage() . ']';
+            return '[Unable to sanitize: '.$e->getMessage().']';
         }
     }
 

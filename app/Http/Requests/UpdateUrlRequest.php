@@ -13,13 +13,13 @@ class UpdateUrlRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        if (!$this->hasHeader('X-Device-ID')) {
+        if (! $this->hasHeader('X-Device-ID')) {
             return false;
         }
 
-        $url = Url::find($this->route('id'));
+        $url = Url::find($this->route('url'));
 
-        if (!$url) {
+        if (! $url) {
             return false;
         }
 
@@ -34,7 +34,7 @@ class UpdateUrlRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'url' => ['required', 'string', 'max:2048', new ValidRfc1738Url()],
+            'url' => ['required', 'string', 'max:2048', new ValidRfc1738Url],
         ];
     }
 
@@ -65,13 +65,13 @@ class UpdateUrlRequest extends FormRequest
      */
     protected function failedAuthorization(): void
     {
-        $url = Url::find($this->route('id'));
+        $url = Url::find($this->route('url'));
 
-        if (!$this->hasHeader('X-Device-ID')) {
+        if (! $this->hasHeader('X-Device-ID')) {
             abort(response()->json(['error' => 'Device ID required'], 400));
         }
 
-        if (!$url) {
+        if (! $url) {
             abort(response()->json(['error' => 'URL not found'], 404));
         }
 

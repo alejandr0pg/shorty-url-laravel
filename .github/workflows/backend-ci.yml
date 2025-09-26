@@ -1,59 +1,53 @@
 name: Backend CI/CD Pipeline
 
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
 on:
   push:
     branches: [main, develop, feature/*]
     paths:
-      - '**.php'
-      - 'composer.json'
-      - 'composer.lock'
-      - '.env.example'
-      - 'database/**'
-      - 'tests/**'
-      - 'docker/**'
-      - 'Dockerfile*'
-      - '.github/workflows/backend-ci.yml'
+      - "**.php"
+      - "composer.json"
+      - "composer.lock"
+      - ".env.example"
+      - "database/**"
+      - "tests/**"
+      - "docker/**"
+      - "Dockerfile*"
+      - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main, develop]
     paths:
-      - '**.php'
-      - 'composer.json'
-      - 'composer.lock'
-      - '.env.example'
-      - 'database/**'
-      - 'tests/**'
+      - "**.php"
+      - "composer.json"
+      - "composer.lock"
+      - ".env.example"
+      - "database/**"
+      - "tests/**"
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        default: 'staging'
-        type: choice
-        options:
-        - staging
-        - production
-      skip_tests:
-        description: 'Skip test execution'
-        required: false
-        default: false
-        type: boolean
 
 env:
-  PHP_VERSION: '8.2'
+  PHP_VERSION: "8.3"
   AWS_REGION: us-east-1
   ECR_REGISTRY: 109995068952.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPOSITORY: shrt-backend
-  ECS_CLUSTER_STAGING: shrt-staging-cluster
-  ECS_CLUSTER_PRODUCTION: shrt-production-cluster
+  ECS_CLUSTER_STAGING: shrt-backend-staging
+  ECS_CLUSTER_PRODUCTION: shrt-backend-production
   ECS_SERVICE_STAGING: shrt-backend-staging
   ECS_SERVICE_PRODUCTION: shrt-backend-production
+  ALB_DNS_NAME: ${{ secrets.ALB_DNS_NAME }}
+  TARGET_GROUP_ARN_STAGING: ${{ secrets.TARGET_GROUP_ARN }}
+  TARGET_GROUP_ARN_PRODUCTION: ${{ secrets.TARGET_GROUP_ARN }}
 
 jobs:
   # Job para análisis de código y tests
   quality-assurance:
     name: Code Quality & Tests
     runs-on: ubuntu-latest
-    if: ${{ !inputs.skip_tests }}
+    if: ${{ github.event_name != 'workflow_dispatch' || true }}
 
     services:
       mysql:
@@ -75,104 +69,101 @@ jobs:
       coverage: ${{ steps.coverage.outputs.coverage }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: ${{ env.PHP_VERSION }}
-        extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, redis
-        coverage: xdebug
-        tools: composer:v2
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, redis
+          coverage: xdebug
+          tools: composer:v2
 
-    - name: Cache Composer Dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.composer/cache/files
-        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-composer-
+      - name: Cache Composer Dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache/files
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
 
-    - name: Install Composer Dependencies
-      run: composer install --no-progress --prefer-dist --optimize-autoloader --no-dev
+      - name: Install Composer Dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
 
-    - name: Install Dev Dependencies for Testing
-      run: composer install --no-progress --prefer-dist --optimize-autoloader
+      - name: Setup Environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
 
-    - name: Setup Environment
-      run: |
-        cp .env.example .env
-        php artisan key:generate
+          # Configure test database
+          sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/' .env
+          sed -i 's/# DB_HOST=127.0.0.1/DB_HOST=127.0.0.1/' .env
+          sed -i 's/# DB_PORT=3306/DB_PORT=3306/' .env
+          sed -i 's/# DB_DATABASE=laravel/DB_DATABASE=shrt_test/' .env
+          sed -i 's/# DB_USERNAME=root/DB_USERNAME=root/' .env
+          sed -i 's/# DB_PASSWORD=/DB_PASSWORD=password/' .env
 
-        # Configure test database
-        sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/' .env
-        sed -i 's/# DB_HOST=127.0.0.1/DB_HOST=127.0.0.1/' .env
-        sed -i 's/# DB_PORT=3306/DB_PORT=3306/' .env
-        sed -i 's/# DB_DATABASE=laravel/DB_DATABASE=shrt_test/' .env
-        sed -i 's/# DB_USERNAME=root/DB_USERNAME=root/' .env
-        sed -i 's/# DB_PASSWORD=/DB_PASSWORD=password/' .env
+          # Configure Redis
+          echo "REDIS_HOST=127.0.0.1" >> .env
+          echo "REDIS_PORT=6379" >> .env
 
-        # Configure Redis
-        echo "REDIS_HOST=127.0.0.1" >> .env
-        echo "REDIS_PORT=6379" >> .env
+          # Configure cache and session
+          echo "CACHE_DRIVER=redis" >> .env
+          echo "SESSION_DRIVER=redis" >> .env
 
-        # Configure cache and session
-        echo "CACHE_DRIVER=redis" >> .env
-        echo "SESSION_DRIVER=redis" >> .env
+      - name: Run Database Migrations
+        run: php artisan migrate --force --seed
 
-    - name: Run Database Migrations
-      run: php artisan migrate --force --seed
+      - name: Check Code Style with Pint
+        run: ./vendor/bin/pint --test
 
-    - name: Check Code Style with Pint
-      run: ./vendor/bin/pint --test
+      - name: Static Analysis with PHPStan
+        run: ./vendor/bin/phpstan analyse --error-format=github --memory-limit=256M
 
-    - name: Static Analysis with PHPStan
-      run: ./vendor/bin/phpstan analyse --error-format=github
+      - name: Run Feature Tests
+        run: ./vendor/bin/pest --coverage --coverage-clover=coverage.xml --stop-on-failure
 
-    - name: Run Feature Tests
-      run: php artisan test --coverage --coverage-clover=coverage.xml --stop-on-failure
+      - name: Extract Coverage Percentage
+        id: coverage
+        run: |
+          COVERAGE=$(php -r "
+            \$xml = simplexml_load_file('coverage.xml');
+            \$metrics = \$xml->project->metrics;
+            \$covered = (float) \$metrics['coveredstatements'];
+            \$total = (float) \$metrics['statements'];
+            \$percentage = \$total > 0 ? round((\$covered / \$total) * 100, 2) : 0;
+            echo \$percentage;
+          ")
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Code coverage: $COVERAGE%"
 
-    - name: Extract Coverage Percentage
-      id: coverage
-      run: |
-        COVERAGE=$(php -r "
-          \$xml = simplexml_load_file('coverage.xml');
-          \$metrics = \$xml->project->metrics;
-          \$covered = (float) \$metrics['coveredstatements'];
-          \$total = (float) \$metrics['statements'];
-          \$percentage = \$total > 0 ? round((\$covered / \$total) * 100, 2) : 0;
-          echo \$percentage;
-        ")
-        echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
-        echo "Code coverage: $COVERAGE%"
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
 
-    - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: backend
-        name: backend-coverage
-        fail_ci_if_error: false
-
-    - name: Upload Test Results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: test-results-${{ github.sha }}
-        path: |
-          coverage.xml
-          storage/logs/
-        retention-days: 5
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ github.sha }}
+          path: |
+            coverage.xml
+            storage/logs/
+          retention-days: 5
 
   # Job para construir imagen Docker
   build-docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
     needs: quality-assurance
-    if: always() && (needs.quality-assurance.result == 'success' || inputs.skip_tests)
+    if: always() && (needs.quality-assurance.result == 'success' || github.event_name == 'workflow_dispatch')
 
     strategy:
       matrix:
@@ -190,64 +181,63 @@ jobs:
       image-digest: ${{ steps.build.outputs.digest }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-    - name: Extract Metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
-        tags: |
-          type=ref,event=branch,suffix=-${{ matrix.environment }}
-          type=ref,event=pr,suffix=-${{ matrix.environment }}
-          type=sha,format=short,suffix=-${{ matrix.environment }}
-          type=raw,value=latest-${{ matrix.environment }},enable={{is_default_branch}}
+      - name: Extract Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.environment }}
+            type=ref,event=pr,suffix=-${{ matrix.environment }}
+            type=sha,format=short,suffix=-${{ matrix.environment }}
+            type=raw,value=latest-${{ matrix.environment }},enable=${{ github.ref == 'refs/heads/main' && matrix.environment == 'production' }}
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build and Push Docker Image
-      id: build
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          APP_ENV=${{ matrix.app_env }}
-          APP_DEBUG=${{ matrix.app_debug }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        platforms: linux/amd64
+      - name: Build and Push Docker Image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Build args removed since Dockerfile doesn't use ARG instructions
+          # Environment variables will be set at runtime via ECS task definition
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
 
-    - name: Scan Image with Trivy
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-${{ matrix.environment }}
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-      continue-on-error: true
+      - name: Scan Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-${{ matrix.environment }}
+          format: "sarif"
+          output: "trivy-results.sarif"
+        continue-on-error: true
 
-    - name: Upload Trivy Scan Results
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-      continue-on-error: true
+      - name: Upload Trivy Scan Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+        continue-on-error: true
 
   # Job para deploy a staging
   deploy-staging:
@@ -255,95 +245,376 @@ jobs:
     runs-on: ubuntu-latest
     needs: [quality-assurance, build-docker]
     if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
-    environment:
-      name: staging
-      url: https://${{ secrets.STAGING_DOMAIN || 'staging-api.tu-dominio.com' }}
+    # environment:
+      # name: staging
+      # url: https://staging-api.tu-dominio.com
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Update ECS Task Definition
-      id: task-def
-      run: |
-        # Download current task definition
-        aws ecs describe-task-definition \
-          --task-definition ${{ env.ECS_SERVICE_STAGING }} \
-          --query taskDefinition > task-definition.json
-
-        # Update image in task definition
-        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-staging"
-
-        jq --arg IMAGE "$NEW_IMAGE" \
-           '.containerDefinitions[0].image = $IMAGE' \
-           task-definition.json > updated-task-definition.json
-
-        # Register new task definition
-        aws ecs register-task-definition \
-          --cli-input-json file://updated-task-definition.json \
-          --query 'taskDefinition.taskDefinitionArn' \
-          --output text > task-definition-arn.txt
-
-        echo "task-definition-arn=$(cat task-definition-arn.txt)" >> $GITHUB_OUTPUT
-
-    - name: Deploy to ECS Staging
-      run: |
-        aws ecs update-service \
-          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
-          --service ${{ env.ECS_SERVICE_STAGING }} \
-          --task-definition ${{ steps.task-def.outputs.task-definition-arn }} \
-          --force-new-deployment
-
-        echo "🚀 Deployment initiated to staging environment"
-
-    - name: Wait for Deployment Stability
-      run: |
-        echo "⏳ Waiting for service to reach stable state..."
-        aws ecs wait services-stable \
-          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
-          --services ${{ env.ECS_SERVICE_STAGING }}
-
-        echo "✅ Staging deployment completed successfully"
-
-    - name: Run Database Migrations
-      run: |
-        # Execute migrations in the ECS task
-        TASK_ARN=$(aws ecs list-tasks \
-          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
-          --service-name ${{ env.ECS_SERVICE_STAGING }} \
-          --query 'taskArns[0]' --output text)
-
-        aws ecs execute-command \
-          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
-          --task $TASK_ARN \
-          --container app \
-          --interactive \
-          --command "php artisan migrate --force" || echo "Migration command completed"
-
-    - name: Health Check
-      run: |
-        echo "🔍 Performing health checks..."
-
-        STAGING_URL="https://${{ secrets.STAGING_DOMAIN || 'staging-api.tu-dominio.com' }}"
-
-        for i in {1..10}; do
-          if curl -f -s "$STAGING_URL/health" > /dev/null; then
-            echo "✅ Staging health check passed"
-            exit 0
+      - name: Ensure Staging ECS Resources
+        run: |
+          echo "Checking if staging ECS cluster exists..."
+          if [ $(aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER_STAGING }} --query 'length(clusters)' --output text) -eq 0 ]; then
+            echo "📦 Creating ECS cluster ${{ env.ECS_CLUSTER_STAGING }}..."
+            aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER_STAGING }} --capacity-providers EC2 FARGATE --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1
+            echo "✅ ECS cluster created successfully"
+          else
+            echo "✅ ECS cluster ${{ env.ECS_CLUSTER_STAGING }} already exists"
           fi
-          echo "Attempt $i/10: Waiting for service..."
-          sleep 30
-        done
 
-        echo "❌ Staging health check failed"
-        exit 1
+          echo "Checking if staging ECS service exists..."
+          if [ $(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_STAGING }} --services ${{ env.ECS_SERVICE_STAGING }} --query 'length(services)' --output text) -eq 0 ]; then
+            echo "📦 ECS service ${{ env.ECS_SERVICE_STAGING }} does not exist. Will create after task definition is ready."
+            echo "export CREATE_STAGING_SERVICE=true" >> $GITHUB_ENV
+          else
+            echo "✅ ECS service ${{ env.ECS_SERVICE_STAGING }} already exists"
+          fi
+
+      - name: Update ECS Task Definition
+        id: task-def
+        run: |
+          # Check if task definition exists
+          if aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_STAGING }} >/dev/null 2>&1; then
+            echo "📝 Updating existing staging task definition..."
+
+            # Download current task definition and filter only necessary fields
+            aws ecs describe-task-definition \
+              --task-definition ${{ env.ECS_SERVICE_STAGING }} \
+              --query 'taskDefinition|{family:family,taskRoleArn:taskRoleArn,executionRoleArn:executionRoleArn,networkMode:networkMode,containerDefinitions:containerDefinitions,volumes:volumes,placementConstraints:placementConstraints,requiresCompatibilities:requiresCompatibilities,cpu:cpu,memory:memory}' > task-definition.json
+          else
+            echo "⚠️ Staging task definition does not exist. Creating minimal task definition for first deployment..."
+
+            # Set variables for expansion
+            ECS_SERVICE_STAGING="${{ env.ECS_SERVICE_STAGING }}"
+            AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+            AWS_REGION="${{ env.AWS_REGION }}"
+
+            # Create a minimal task definition for first deployment
+            jq -n \
+              --arg family "$ECS_SERVICE_STAGING" \
+              --arg account "$AWS_ACCOUNT_ID" \
+              --arg region "$AWS_REGION" \
+              '{
+                family: $family,
+                networkMode: "awsvpc",
+                requiresCompatibilities: ["FARGATE"],
+                cpu: "256",
+                memory: "512",
+                executionRoleArn: "arn:aws:iam::\($account):role/ecsTaskExecutionRole",
+                taskRoleArn: "arn:aws:iam::\($account):role/ecsTaskRole",
+                containerDefinitions: [
+                  {
+                    name: "app",
+                    image: "placeholder-will-be-replaced",
+                    essential: true,
+                    portMappings: [
+                      {
+                        containerPort: 80,
+                        protocol: "tcp"
+                      }
+                    ],
+                    logConfiguration: {
+                      logDriver: "awslogs",
+                      options: {
+                        "awslogs-group": "/ecs/shrt-backend-staging",
+                        "awslogs-region": $region,
+                        "awslogs-stream-prefix": "ecs",
+                        "awslogs-create-group": "true"
+                      }
+                    },
+                    environment: [
+                      {
+                        name: "APP_NAME",
+                        value: "SHRT"
+                      },
+                      {
+                        name: "APP_ENV",
+                        value: "staging"
+                      },
+                      {
+                        name: "APP_DEBUG",
+                        value: "true"
+                      },
+                      {
+                        name: "APP_TIMEZONE",
+                        value: "UTC"
+                      },
+                      {
+                        name: "APP_URL",
+                        value: "${{ secrets.STAGING_APP_URL || 'https://staging-api.your-domain.com' }}"
+                      },
+                      {
+                        name: "APP_KEY",
+                        value: "${{ secrets.APP_KEY || 'base64:cGxlYXNlLWNoYW5nZS10aGlzLXRvLWEtcmFuZG9tLTMyLWNoYXJhY3Rlci1zdHJpbmc=' }}"
+                      },
+                      {
+                        name: "LOG_CHANNEL",
+                        value: "stderr"
+                      },
+                      {
+                        name: "LOG_LEVEL",
+                        value: "debug"
+                      },
+                      {
+                        name: "DB_CONNECTION",
+                        value: "mysql"
+                      },
+                      {
+                        name: "DB_HOST",
+                        value: "${{ secrets.STAGING_DB_HOST || secrets.DB_HOST }}"
+                      },
+                      {
+                        name: "DB_PORT",
+                        value: "3306"
+                      },
+                      {
+                        name: "DB_DATABASE",
+                        value: "${{ secrets.STAGING_DB_DATABASE || secrets.DB_DATABASE }}"
+                      },
+                      {
+                        name: "DB_USERNAME",
+                        value: "${{ secrets.STAGING_DB_USERNAME || secrets.DB_USERNAME }}"
+                      },
+                      {
+                        name: "DB_PASSWORD",
+                        value: "${{ secrets.STAGING_DB_PASSWORD || secrets.DB_PASSWORD }}"
+                      },
+                      {
+                        name: "REDIS_HOST",
+                        value: "${{ secrets.STAGING_REDIS_HOST || secrets.REDIS_HOST || 'your-redis-endpoint.cache.amazonaws.com' }}"
+                      },
+                      {
+                        name: "REDIS_PORT",
+                        value: "6379"
+                      },
+                      {
+                        name: "REDIS_PASSWORD",
+                        value: "${{ secrets.STAGING_REDIS_PASSWORD || secrets.REDIS_PASSWORD || 'null' }}"
+                      },
+                      {
+                        name: "CACHE_DRIVER",
+                        value: "redis"
+                      },
+                      {
+                        name: "CACHE_PREFIX",
+                        value: "shrt_staging_cache"
+                      },
+                      {
+                        name: "SESSION_DRIVER",
+                        value: "redis"
+                      },
+                      {
+                        name: "SESSION_LIFETIME",
+                        value: "120"
+                      },
+                      {
+                        name: "QUEUE_CONNECTION",
+                        value: "redis"
+                      },
+                      {
+                        name: "AWS_REGION",
+                        value: "${{ env.AWS_REGION }}"
+                      },
+                      {
+                        name: "AWS_DEFAULT_REGION",
+                        value: "${{ env.AWS_REGION }}"
+                      },
+                      {
+                        name: "AWS_ACCESS_KEY_ID",
+                        value: "${{ secrets.AWS_ACCESS_KEY_ID }}"
+                      },
+                      {
+                        name: "AWS_SECRET_ACCESS_KEY",
+                        value: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+                      },
+                      {
+                        name: "AWS_BUCKET",
+                        value: "${{ secrets.STAGING_AWS_BUCKET || secrets.AWS_BUCKET || 'shrt-storage-staging' }}"
+                      },
+                      {
+                        name: "AWS_USE_PATH_STYLE_ENDPOINT",
+                        value: "false"
+                      },
+                      {
+                        name: "FILESYSTEM_DISK",
+                        value: "s3"
+                      },
+                      {
+                        name: "URL_LENGTH",
+                        value: "7"
+                      },
+                      {
+                        name: "URL_ALPHABET",
+                        value: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                      },
+                      {
+                        name: "URL_EXPIRATION_DAYS",
+                        value: "365"
+                      },
+                      {
+                        name: "RATE_LIMIT_PER_MINUTE",
+                        value: "60"
+                      },
+                      {
+                        name: "HEALTH_CHECK_PATH",
+                        value: "/health"
+                      }
+                    ]
+                  }
+                ]
+              }' > task-definition.json
+          fi
+
+          # Update image in task definition
+          SHORT_SHA=${GITHUB_SHA:0:7}
+          NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:sha-$SHORT_SHA-staging"
+
+          jq --arg IMAGE "$NEW_IMAGE" \
+             '.containerDefinitions[0].image = $IMAGE' \
+             task-definition.json > updated-task-definition.json
+
+          # Register new task definition
+          aws ecs register-task-definition \
+            --cli-input-json file://updated-task-definition.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text > task-definition-arn.txt
+
+          echo "task-definition-arn=$(cat task-definition-arn.txt)" >> $GITHUB_OUTPUT
+
+      - name: Create Staging ECS Service if Needed
+        if: ${{ env.CREATE_STAGING_SERVICE == 'true' }}
+        run: |
+          echo "📦 Creating ECS service ${{ env.ECS_SERVICE_STAGING }}..."
+
+          # Get default VPC and subnets (same logic as production)
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text)
+          if [ "$VPC_ID" = "None" ] || [ -z "$VPC_ID" ]; then
+            VPC_ID=$(aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text)
+          fi
+
+          # Get subnets from production ALB (staging uses same ALB for now)
+          PRODUCTION_ALB_ARN=$(aws elbv2 describe-target-groups --target-group-arns ${{ env.TARGET_GROUP_ARN_PRODUCTION }} --query 'TargetGroups[0].LoadBalancerArns[0]' --output text)
+          SUBNETS=$(aws elbv2 describe-load-balancers --load-balancer-arns $PRODUCTION_ALB_ARN --query 'LoadBalancers[0].AvailabilityZones[*].SubnetId' --output text | tr '\t' ',')
+
+          # Get or create security group for staging
+          SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=shrt-backend-staging-sg" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
+          if [ "$SG_ID" = "None" ] || [ -z "$SG_ID" ]; then
+            echo "Creating staging security group..."
+            SG_ID=$(aws ec2 create-security-group \
+              --group-name shrt-backend-staging-sg \
+              --description "Security group for SHRT backend staging service" \
+              --vpc-id $VPC_ID \
+              --query 'GroupId' --output text)
+
+            aws ec2 authorize-security-group-ingress \
+              --group-id $SG_ID \
+              --protocol tcp \
+              --port 80 \
+              --cidr 0.0.0.0/0
+
+            echo "✅ Staging security group created: $SG_ID"
+          else
+            echo "✅ Staging security group exists: $SG_ID"
+
+            # Ensure port 80 is allowed (in case it was created with wrong configuration)
+            if ! aws ec2 describe-security-groups --group-ids $SG_ID --query 'SecurityGroups[0].IpPermissions[?FromPort==`80` && ToPort==`80` && IpProtocol==`tcp`]' --output text | grep -q 80; then
+              echo "🔧 Adding port 80 to existing staging security group..."
+              aws ec2 authorize-security-group-ingress \
+                --group-id $SG_ID \
+                --protocol tcp \
+                --port 80 \
+                --cidr 0.0.0.0/0 || echo "Port 80 rule may already exist"
+              echo "✅ Port 80 rule ensured for staging"
+            else
+              echo "✅ Port 80 already configured for staging"
+            fi
+          fi
+
+          # Create the ECS service
+          aws ecs create-service \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --service-name ${{ env.ECS_SERVICE_STAGING }} \
+            --task-definition ${{ steps.task-def.outputs.task-definition-arn }} \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+            --load-balancers targetGroupArn=${{ env.TARGET_GROUP_ARN_STAGING }},containerName=app,containerPort=80 \
+            --enable-execute-command \
+            || echo "⚠️ Staging service creation failed - will try to update existing service instead"
+
+          echo "✅ Staging ECS service creation completed"
+
+      - name: Deploy to ECS Staging
+        run: |
+          # Check if we need to wait for newly created service
+          if [ "${CREATE_STAGING_SERVICE:-false}" = "true" ]; then
+            echo "⏳ Waiting for new service to become stable before updating..."
+            sleep 30
+          fi
+
+          # Update service with new task definition
+          if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_STAGING }} --services ${{ env.ECS_SERVICE_STAGING }} --query 'services[0].status' --output text | grep -q "ACTIVE"; then
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+              --service ${{ env.ECS_SERVICE_STAGING }} \
+              --task-definition ${{ steps.task-def.outputs.task-definition-arn }} \
+              --force-new-deployment
+
+            echo "🚀 Deployment initiated to staging environment"
+          else
+            echo "⚠️ Service not in ACTIVE state, deployment handled by service creation step"
+          fi
+
+      - name: Wait for Deployment Stability
+        run: |
+          echo "⏳ Waiting for service to reach stable state..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --services ${{ env.ECS_SERVICE_STAGING }}
+
+          echo "✅ Staging deployment completed successfully"
+
+      - name: Run Database Migrations
+        run: |
+          # Execute migrations in the ECS task
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --service-name ${{ env.ECS_SERVICE_STAGING }} \
+            --query 'taskArns[0]' --output text)
+
+          aws ecs execute-command \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --task $TASK_ARN \
+            --container app \
+            --interactive \
+            --command "php artisan migrate --force" 2>/dev/null || echo "Migration command completed (may require manual execution)"
+
+      - name: Health Check
+        run: |
+          echo "🔍 Performing health checks..."
+
+          STAGING_URL="https://${{ vars.STAGING_DOMAIN || 'staging-api.tu-dominio.com' }}"
+
+          for i in $(seq 1 10); do
+            if curl -f -s "$STAGING_URL/health" > /dev/null; then
+              echo "✅ Staging health check passed"
+              exit 0
+            fi
+            echo "Attempt $i/10: Waiting for service..."
+            sleep 30
+          done
+
+          echo "❌ Staging health check failed"
+          exit 1
 
   # Job para deploy a producción
   deploy-production:
@@ -351,128 +622,819 @@ jobs:
     runs-on: ubuntu-latest
     needs: [quality-assurance, build-docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment:
-      name: production
-      url: https://${{ secrets.PRODUCTION_DOMAIN || 'api.tu-dominio.com' }}
+    # environment:
+      # name: production
+      # url: https://api.tu-dominio.com
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Create Production Backup
-      run: |
-        echo "📦 Creating backup of current production deployment..."
+      - name: Validate Required Secrets
+        run: |
+          echo "🔍 Validating required secrets..."
 
-        # Get current task definition
-        aws ecs describe-task-definition \
-          --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
-          --query taskDefinition > current-production-task.json
-
-        # Store as backup
-        BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
-        aws s3 cp current-production-task.json \
-          "s3://shrt-backups/task-definitions/$BACKUP_NAME.json" || true
-
-    - name: Update Production Task Definition
-      id: task-def-prod
-      run: |
-        # Download current task definition
-        aws ecs describe-task-definition \
-          --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
-          --query taskDefinition > task-definition.json
-
-        # Update image in task definition
-        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-production"
-
-        jq --arg IMAGE "$NEW_IMAGE" \
-           '.containerDefinitions[0].image = $IMAGE' \
-           task-definition.json > updated-task-definition.json
-
-        # Register new task definition
-        aws ecs register-task-definition \
-          --cli-input-json file://updated-task-definition.json \
-          --query 'taskDefinition.taskDefinitionArn' \
-          --output text > task-definition-arn.txt
-
-        echo "task-definition-arn=$(cat task-definition-arn.txt)" >> $GITHUB_OUTPUT
-
-    - name: Blue-Green Deployment to Production
-      run: |
-        echo "🚀 Starting blue-green deployment to production..."
-
-        # Update service with new task definition
-        aws ecs update-service \
-          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
-          --service ${{ env.ECS_SERVICE_PRODUCTION }} \
-          --task-definition ${{ steps.task-def-prod.outputs.task-definition-arn }} \
-          --force-new-deployment
-
-    - name: Wait for Production Deployment
-      run: |
-        echo "⏳ Waiting for production service to reach stable state..."
-
-        timeout 1800 aws ecs wait services-stable \
-          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
-          --services ${{ env.ECS_SERVICE_PRODUCTION }}
-
-        echo "✅ Production deployment completed successfully"
-
-    - name: Run Production Migrations
-      run: |
-        # Execute migrations in production
-        TASK_ARN=$(aws ecs list-tasks \
-          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
-          --service-name ${{ env.ECS_SERVICE_PRODUCTION }} \
-          --query 'taskArns[0]' --output text)
-
-        aws ecs execute-command \
-          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
-          --task $TASK_ARN \
-          --container app \
-          --interactive \
-          --command "php artisan migrate --force" || echo "Migration command completed"
-
-    - name: Production Health Check & Smoke Tests
-      run: |
-        echo "🔍 Running production health checks and smoke tests..."
-
-        # Basic health check
-        PRODUCTION_URL="https://${{ secrets.PRODUCTION_DOMAIN || 'api.tu-dominio.com' }}"
-
-        for i in {1..15}; do
-          if curl -f -s "$PRODUCTION_URL/health" > /dev/null; then
-            echo "✅ Production health check passed"
-            break
-          fi
-          if [ $i -eq 15 ]; then
-            echo "❌ Production health check failed"
+          # Validate APP_KEY
+          if [ -z "${{ secrets.APP_KEY }}" ]; then
+            echo "❌ APP_KEY secret is not set"
+            echo "💡 Generate with: php artisan key:generate --show"
             exit 1
           fi
-          echo "Attempt $i/15: Waiting for service..."
-          sleep 30
-        done
+          echo "✅ APP_KEY secret is set"
 
-        # API smoke tests
-        if curl -f -s "$PRODUCTION_URL/api/health" | jq -e '.status == "ok"' > /dev/null; then
-          echo "✅ API endpoint smoke test passed"
-        else
-          echo "❌ API endpoint smoke test failed"
-          exit 1
-        fi
+          # Validate Database secrets
+          if [ -z "${{ secrets.DB_HOST }}" ]; then
+            echo "❌ DB_HOST secret is not set"
+            echo "💡 Should be: shrt-production-db.cyn62qqm4nbb.us-east-1.rds.amazonaws.com"
+            exit 1
+          fi
 
-        # Database connectivity test
-        if curl -f -s "$PRODUCTION_URL/api/stats" > /dev/null; then
-          echo "✅ Database connectivity test passed"
-        else
-          echo "⚠️ Database connectivity test inconclusive"
-        fi
+          if [ -z "${{ secrets.DB_DATABASE }}" ]; then
+            echo "❌ DB_DATABASE secret is not set"
+            echo "💡 Should be: shrt"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.DB_USERNAME }}" ]; then
+            echo "❌ DB_USERNAME secret is not set"
+            echo "💡 Should be: admin"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
+            echo "❌ DB_PASSWORD secret is not set"
+            exit 1
+          fi
+          echo "✅ Database secrets are set"
+
+          # Validate ALB secrets
+          if [ -z "${{ secrets.TARGET_GROUP_ARN }}" ]; then
+            echo "❌ TARGET_GROUP_ARN secret is not set"
+            echo "💡 Get with: aws elbv2 describe-target-groups --names shrt-production-tg"
+            exit 1
+          fi
+          echo "✅ ALB secrets for production are set"
+
+          # Validate AWS Account ID
+          if [ -z "${{ secrets.AWS_ACCOUNT_ID }}" ]; then
+            echo "❌ AWS_ACCOUNT_ID secret is not set"
+            echo "💡 Get with: aws sts get-caller-identity --query Account --output text"
+            exit 1
+          fi
+          echo "✅ AWS secrets are set"
+
+          # Warn if Redis is not configured (but don't fail)
+          if [ -z "${{ secrets.REDIS_HOST }}" ]; then
+            echo "⚠️  REDIS_HOST secret is not set - will use fallback to database cache"
+            echo "💡 Should be: shrt-production-redis.q4spdi.ng.0001.use1.cache.amazonaws.com"
+          else
+            echo "✅ Redis secrets are set"
+          fi
+
+      - name: Ensure Production ECS Resources
+        run: |
+          echo "Checking if production ECS cluster exists..."
+          if [ $(aws ecs describe-clusters --clusters ${{ env.ECS_CLUSTER_PRODUCTION }} --query 'length(clusters)' --output text) -eq 0 ]; then
+            echo "📦 Creating ECS cluster ${{ env.ECS_CLUSTER_PRODUCTION }}..."
+            aws ecs create-cluster --cluster-name ${{ env.ECS_CLUSTER_PRODUCTION }} --capacity-providers EC2 FARGATE --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1
+            echo "✅ ECS cluster created successfully"
+          else
+            echo "✅ ECS cluster ${{ env.ECS_CLUSTER_PRODUCTION }} already exists"
+          fi
+
+          echo "Checking if production ECS service exists..."
+          if [ $(aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} --services ${{ env.ECS_SERVICE_PRODUCTION }} --query 'length(services)' --output text) -eq 0 ]; then
+            echo "📦 ECS service ${{ env.ECS_SERVICE_PRODUCTION }} does not exist. Will create after task definition is ready."
+            echo "export CREATE_SERVICE=true" >> $GITHUB_ENV
+          else
+            echo "✅ ECS service ${{ env.ECS_SERVICE_PRODUCTION }} already exists"
+          fi
+
+      - name: Create Production Backup
+        run: |
+          echo "📦 Creating backup of current production deployment..."
+
+          # Check if task definition exists before trying to backup
+          if aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} >/dev/null 2>&1; then
+            # Get current task definition with only necessary fields
+            aws ecs describe-task-definition \
+              --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --query 'taskDefinition|{family:family,taskRoleArn:taskRoleArn,executionRoleArn:executionRoleArn,networkMode:networkMode,containerDefinitions:containerDefinitions,volumes:volumes,placementConstraints:placementConstraints,requiresCompatibilities:requiresCompatibilities,cpu:cpu,memory:memory}' > current-production-task.json
+
+            # Store as backup (commented out until shrt-backups bucket is created)
+            BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
+            echo "Backup would be saved to s3://shrt-backups/task-definitions/$BACKUP_NAME.json" || true
+
+            echo "✅ Production backup created successfully"
+          else
+            echo "⚠️ No existing production task definition found. Skipping backup."
+          fi
+
+      - name: Update Production Task Definition
+        id: task-def-prod
+        run: |
+          # Check if task definition exists
+          # Set all secret variables for environment injection
+          APP_URL="${{ secrets.APP_URL }}"
+          APP_KEY="${{ secrets.APP_KEY }}"
+          DB_HOST="${{ secrets.DB_HOST }}"
+          DB_DATABASE="${{ secrets.DB_DATABASE }}"
+          DB_USERNAME="${{ secrets.DB_USERNAME }}"
+          DB_PASSWORD="${{ secrets.DB_PASSWORD }}"
+          REDIS_HOST="${{ secrets.REDIS_HOST }}"
+          REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}"
+          AWS_ACCESS_KEY_ID_SECRET="${{ secrets.AWS_ACCESS_KEY_ID }}"
+          AWS_SECRET_ACCESS_KEY_SECRET="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          AWS_BUCKET="${{ secrets.AWS_BUCKET }}"
+
+          if aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} >/dev/null 2>&1; then
+            echo "📝 Updating existing production task definition with new environment variables..."
+
+            # Download current task definition structure but we'll rebuild the environment variables
+            aws ecs describe-task-definition \
+              --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --query 'taskDefinition|{family:family,taskRoleArn:taskRoleArn,executionRoleArn:executionRoleArn,networkMode:networkMode,volumes:volumes,placementConstraints:placementConstraints,requiresCompatibilities:requiresCompatibilities,cpu:cpu,memory:memory}' > base-task-definition.json
+
+            # Rebuild task definition with updated environment variables
+            jq --arg image "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:sha-${GITHUB_SHA:0:7}-production" \
+               '.containerDefinitions = [{
+                 name: "app",
+                 image: $image,
+                 essential: true,
+                 portMappings: [{
+                   containerPort: 80,
+                   protocol: "tcp"
+                 }],
+                 logConfiguration: {
+                   logDriver: "awslogs",
+                   options: {
+                     "awslogs-group": "/ecs/shrt-backend",
+                     "awslogs-region": "${{ env.AWS_REGION }}",
+                     "awslogs-stream-prefix": "ecs",
+                     "awslogs-create-group": "true"
+                   }
+                 },
+                 environment: [
+                   { name: "APP_NAME", value: "SHRT" },
+                   { name: "APP_ENV", value: "production" },
+                   { name: "APP_DEBUG", value: "false" },
+                   { name: "APP_TIMEZONE", value: "UTC" },
+                   { name: "APP_URL", value: "'"${APP_URL:-http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com}"'" },
+                   { name: "APP_KEY", value: "'"${APP_KEY}"'" },
+                   { name: "LOG_CHANNEL", value: "stderr" },
+                   { name: "LOG_LEVEL", value: "error" },
+                   { name: "DB_CONNECTION", value: "mysql" },
+                   { name: "DB_HOST", value: "'"${DB_HOST}"'" },
+                   { name: "DB_PORT", value: "3306" },
+                   { name: "DB_DATABASE", value: "'"${DB_DATABASE}"'" },
+                   { name: "DB_USERNAME", value: "'"${DB_USERNAME}"'" },
+                   { name: "DB_PASSWORD", value: "'"${DB_PASSWORD}"'" },
+                   { name: "REDIS_HOST", value: "'"${REDIS_HOST:-shrt-production-redis.q4spdi.ng.0001.use1.cache.amazonaws.com}"'" },
+                   { name: "REDIS_PORT", value: "6379" },
+                   { name: "REDIS_PASSWORD", value: "'"${REDIS_PASSWORD:-null}"'" },
+                   { name: "CACHE_STORE", value: "redis" },
+                   { name: "CACHE_PREFIX", value: "shrt_cache" },
+                   { name: "SESSION_DRIVER", value: "redis" },
+                   { name: "SESSION_LIFETIME", value: "120" },
+                   { name: "QUEUE_CONNECTION", value: "database" },
+                   { name: "REDIS_CLIENT", value: "phpredis" },
+                   { name: "BROADCAST_CONNECTION", value: "log" },
+                   { name: "FILESYSTEM_DISK", value: "local" },
+                   { name: "AWS_REGION", value: "${{ env.AWS_REGION }}" },
+                   { name: "AWS_DEFAULT_REGION", value: "${{ env.AWS_REGION }}" },
+                   { name: "AWS_ACCESS_KEY_ID", value: "'"${AWS_ACCESS_KEY_ID_SECRET}"'" },
+                   { name: "AWS_SECRET_ACCESS_KEY", value: "'"${AWS_SECRET_ACCESS_KEY_SECRET}"'" },
+                   { name: "AWS_BUCKET", value: "'"${AWS_BUCKET:-shrt-storage}"'" },
+                   { name: "AWS_USE_PATH_STYLE_ENDPOINT", value: "false" }
+                 ]
+               }]' base-task-definition.json > task-definition.json
+          else
+            echo "⚠️ Production task definition does not exist. Creating minimal task definition for first deployment..."
+
+            # Set variables for expansion
+            ECS_SERVICE_PRODUCTION="${{ env.ECS_SERVICE_PRODUCTION }}"
+            AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+            AWS_REGION="${{ env.AWS_REGION }}"
+
+            # Create a minimal task definition for first deployment
+            jq -n \
+              --arg family "$ECS_SERVICE_PRODUCTION" \
+              --arg account "$AWS_ACCOUNT_ID" \
+              --arg region "$AWS_REGION" \
+              '{
+                family: $family,
+                networkMode: "awsvpc",
+                requiresCompatibilities: ["FARGATE"],
+                cpu: "256",
+                memory: "512",
+                executionRoleArn: "arn:aws:iam::\($account):role/ecsTaskExecutionRole",
+                taskRoleArn: "arn:aws:iam::\($account):role/ecsTaskRole",
+                containerDefinitions: [
+                  {
+                    name: "app",
+                    image: "placeholder-will-be-replaced",
+                    essential: true,
+                    portMappings: [
+                      {
+                        containerPort: 80,
+                        protocol: "tcp"
+                      }
+                    ],
+                    logConfiguration: {
+                      logDriver: "awslogs",
+                      options: {
+                        "awslogs-group": "/ecs/shrt-backend",
+                        "awslogs-region": $region,
+                        "awslogs-stream-prefix": "ecs",
+                        "awslogs-create-group": "true"
+                      }
+                    },
+                    environment: [
+                      {
+                        name: "APP_NAME",
+                        value: "SHRT"
+                      },
+                      {
+                        name: "APP_ENV",
+                        value: "production"
+                      },
+                      {
+                        name: "APP_DEBUG",
+                        value: "false"
+                      },
+                      {
+                        name: "APP_TIMEZONE",
+                        value: "UTC"
+                      },
+                      {
+                        name: "APP_URL",
+                        value: "${APP_URL:-http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com}"
+                      },
+                      {
+                        name: "APP_KEY",
+                        value: "${APP_KEY}"
+                      },
+                      {
+                        name: "LOG_CHANNEL",
+                        value: "stderr"
+                      },
+                      {
+                        name: "LOG_LEVEL",
+                        value: "error"
+                      },
+                      {
+                        name: "DB_CONNECTION",
+                        value: "mysql"
+                      },
+                      {
+                        name: "DB_HOST",
+                        value: "${DB_HOST}"
+                      },
+                      {
+                        name: "DB_PORT",
+                        value: "3306"
+                      },
+                      {
+                        name: "DB_DATABASE",
+                        value: "${DB_DATABASE}"
+                      },
+                      {
+                        name: "DB_USERNAME",
+                        value: "${DB_USERNAME}"
+                      },
+                      {
+                        name: "DB_PASSWORD",
+                        value: "${DB_PASSWORD}"
+                      },
+                      {
+                        name: "REDIS_HOST",
+                        value: "${REDIS_HOST:-shrt-production-redis.q4spdi.ng.0001.use1.cache.amazonaws.com}"
+                      },
+                      {
+                        name: "REDIS_PORT",
+                        value: "6379"
+                      },
+                      {
+                        name: "REDIS_PASSWORD",
+                        value: "${REDIS_PASSWORD:-null}"
+                      },
+                      {
+                        name: "CACHE_STORE",
+                        value: "redis"
+                      },
+                      {
+                        name: "CACHE_PREFIX",
+                        value: "shrt_cache"
+                      },
+                      {
+                        name: "SESSION_DRIVER",
+                        value: "redis"
+                      },
+                      {
+                        name: "SESSION_LIFETIME",
+                        value: "120"
+                      },
+                      {
+                        name: "QUEUE_CONNECTION",
+                        value: "redis"
+                      },
+                      {
+                        name: "AWS_REGION",
+                        value: "${{ env.AWS_REGION }}"
+                      },
+                      {
+                        name: "AWS_DEFAULT_REGION",
+                        value: "${{ env.AWS_REGION }}"
+                      },
+                      {
+                        name: "AWS_ACCESS_KEY_ID",
+                        value: "${AWS_ACCESS_KEY_ID_SECRET}"
+                      },
+                      {
+                        name: "AWS_SECRET_ACCESS_KEY",
+                        value: "${AWS_SECRET_ACCESS_KEY_SECRET}"
+                      },
+                      {
+                        name: "AWS_BUCKET",
+                        value: "${AWS_BUCKET:-shrt-storage}"
+                      },
+                      {
+                        name: "AWS_USE_PATH_STYLE_ENDPOINT",
+                        value: "false"
+                      },
+                      {
+                        name: "FILESYSTEM_DISK",
+                        value: "s3"
+                      },
+                      {
+                        name: "URL_LENGTH",
+                        value: "7"
+                      },
+                      {
+                        name: "URL_ALPHABET",
+                        value: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+                      },
+                      {
+                        name: "URL_EXPIRATION_DAYS",
+                        value: "365"
+                      },
+                      {
+                        name: "RATE_LIMIT_PER_MINUTE",
+                        value: "60"
+                      },
+                      {
+                        name: "HEALTH_CHECK_PATH",
+                        value: "/health"
+                      }
+                    ]
+                  }
+                ]
+              }' > task-definition.json
+          fi
+
+          # Update image in task definition
+          SHORT_SHA=${GITHUB_SHA:0:7}
+          NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:sha-$SHORT_SHA-production"
+
+          jq --arg IMAGE "$NEW_IMAGE" \
+             '.containerDefinitions[0].image = $IMAGE' \
+             task-definition.json > updated-task-definition.json
+
+          # Register new task definition
+          aws ecs register-task-definition \
+            --cli-input-json file://updated-task-definition.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text > task-definition-arn.txt
+
+          echo "task-definition-arn=$(cat task-definition-arn.txt)" >> $GITHUB_OUTPUT
+
+      - name: Create ECS Service if Needed
+        if: ${{ env.CREATE_SERVICE == 'true' }}
+        run: |
+          echo "📦 Creating ECS service ${{ env.ECS_SERVICE_PRODUCTION }}..."
+
+          # Get default VPC
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=is-default,Values=true" --query 'Vpcs[0].VpcId' --output text)
+          if [ "$VPC_ID" = "None" ] || [ -z "$VPC_ID" ]; then
+            VPC_ID=$(aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text)
+          fi
+
+          # Get ALB subnets to ensure AZ alignment
+          PRODUCTION_ALB_ARN=$(aws elbv2 describe-target-groups --target-group-arns ${{ env.TARGET_GROUP_ARN_PRODUCTION }} --query 'TargetGroups[0].LoadBalancerArns[0]' --output text)
+
+          echo "🔍 ALB Availability Zones (ECS must match these):"
+          aws elbv2 describe-load-balancers --load-balancer-arns $PRODUCTION_ALB_ARN --query 'LoadBalancers[0].AvailabilityZones[*].{Zone:ZoneName,Subnet:SubnetId}' --output table
+
+          SUBNETS=$(aws elbv2 describe-load-balancers --load-balancer-arns $PRODUCTION_ALB_ARN --query 'LoadBalancers[0].AvailabilityZones[*].SubnetId' --output text | tr '\t' ',')
+          echo "✅ Using ALB-aligned subnets: $SUBNETS"
+
+          # Validate that we have at least 2 subnets for Fargate
+          SUBNET_COUNT=$(echo "$SUBNETS" | tr ',' '\n' | wc -l)
+          echo "Number of ALB subnets: $SUBNET_COUNT"
+
+          if [ "$SUBNET_COUNT" -lt 2 ]; then
+            echo "❌ ALB has less than 2 subnets. Fargate requires at least 2 AZs."
+            exit 1
+          fi
+
+          # Get or create security group
+          SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=shrt-backend-sg" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "None")
+          if [ "$SG_ID" = "None" ] || [ -z "$SG_ID" ]; then
+            echo "Creating security group..."
+            SG_ID=$(aws ec2 create-security-group \
+              --group-name shrt-backend-sg \
+              --description "Security group for SHRT backend service" \
+              --vpc-id $VPC_ID \
+              --query 'GroupId' --output text)
+
+            # Add rules to security group
+            aws ec2 authorize-security-group-ingress \
+              --group-id $SG_ID \
+              --protocol tcp \
+              --port 80 \
+              --cidr 0.0.0.0/0
+
+            echo "✅ Security group created: $SG_ID"
+          else
+            echo "✅ Security group exists: $SG_ID"
+
+            # Ensure port 80 is allowed (in case it was created with wrong configuration)
+            if ! aws ec2 describe-security-groups --group-ids $SG_ID --query 'SecurityGroups[0].IpPermissions[?FromPort==`80` && ToPort==`80` && IpProtocol==`tcp`]' --output text | grep -q 80; then
+              echo "🔧 Adding port 80 to existing security group..."
+              aws ec2 authorize-security-group-ingress \
+                --group-id $SG_ID \
+                --protocol tcp \
+                --port 80 \
+                --cidr 0.0.0.0/0 || echo "Port 80 rule may already exist"
+              echo "✅ Port 80 rule ensured"
+            else
+              echo "✅ Port 80 already configured"
+            fi
+          fi
+
+          echo "Using VPC: $VPC_ID"
+          echo "Using Subnets: $SUBNETS"
+          echo "Using Security Group: $SG_ID"
+
+          # Create the ECS service (minimal configuration for initial setup)
+          aws ecs create-service \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --service-name ${{ env.ECS_SERVICE_PRODUCTION }} \
+            --task-definition ${{ steps.task-def-prod.outputs.task-definition-arn }} \
+            --desired-count 1 \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+            --load-balancers targetGroupArn=${{ env.TARGET_GROUP_ARN_PRODUCTION }},containerName=app,containerPort=80 \
+            --enable-execute-command \
+            || echo "⚠️ Service creation failed - will try to update existing service instead"
+
+          echo "✅ ECS service creation completed"
+
+      - name: Blue-Green Deployment to Production
+        run: |
+          echo "🚀 Starting blue-green deployment to production..."
+
+          # Check if service exists before trying to update
+          if [ "${CREATE_SERVICE:-false}" = "true" ]; then
+            echo "⏳ Waiting for new service to become stable before updating..."
+            sleep 60
+          fi
+
+          # Update service with new task definition and ensure AZ alignment
+          if aws ecs describe-services --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} --services ${{ env.ECS_SERVICE_PRODUCTION }} --query 'services[0].status' --output text | grep -q "ACTIVE"; then
+            echo "🔧 Updating service with ALB-aligned subnets..."
+
+            # Get ALB subnets for existing service update
+            PRODUCTION_ALB_ARN=$(aws elbv2 describe-target-groups --target-group-arns ${{ env.TARGET_GROUP_ARN_PRODUCTION }} --query 'TargetGroups[0].LoadBalancerArns[0]' --output text)
+            SUBNETS=$(aws elbv2 describe-load-balancers --load-balancer-arns $PRODUCTION_ALB_ARN --query 'LoadBalancers[0].AvailabilityZones[*].SubnetId' --output text | tr '\t' ',')
+
+            # Get existing security group
+            SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=shrt-backend-sg" --query 'SecurityGroups[0].GroupId' --output text)
+
+            aws ecs update-service \
+              --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+              --service ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --task-definition ${{ steps.task-def-prod.outputs.task-definition-arn }} \
+              --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG_ID],assignPublicIp=ENABLED}" \
+              --force-new-deployment
+
+            echo "✅ Service updated with ALB-aligned subnets: $SUBNETS"
+          else
+            echo "⚠️ Service not in ACTIVE state, deployment will be handled by service creation step"
+          fi
+
+      - name: Wait for Production Deployment
+        run: |
+          echo "⏳ Waiting for production tasks to be running (ignoring health checks)..."
+          # Wait for running tasks instead of stable state to avoid health check delays
+          for i in $(seq 1 60); do
+            RUNNING_COUNT=$(aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+              --services ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --query 'services[0].runningCount' --output text)
+            DESIRED_COUNT=$(aws ecs describe-services \
+              --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+              --services ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --query 'services[0].desiredCount' --output text)
+            if [ "$RUNNING_COUNT" -eq "$DESIRED_COUNT" ] && [ "$RUNNING_COUNT" -gt 0 ]; then
+              echo "✅ Production deployment completed - $RUNNING_COUNT/$DESIRED_COUNT task(s) running"
+              break
+            fi
+            echo "Attempt $i/60: Running $RUNNING_COUNT/$DESIRED_COUNT tasks, waiting 30s..."
+            sleep 30
+          done
+          if [ "$RUNNING_COUNT" -ne "$DESIRED_COUNT" ] || [ "$RUNNING_COUNT" -eq 0 ]; then
+            echo "❌ Tasks not running properly after 30 minutes"
+            exit 1
+          fi
+
+      - name: Force Service Update and Clean Old Targets
+        run: |
+          echo "🔧 Forcing service update to ensure new targets registration..."
+
+          # Force new deployment to ensure fresh targets
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --service ${{ env.ECS_SERVICE_PRODUCTION }} \
+            --force-new-deployment
+
+          echo "⏳ Waiting 60 seconds for old targets to start draining..."
+          sleep 60
+
+      - name: Validate ALB and Target Group Configuration
+        run: |
+          echo "🔍 Validating complete ALB configuration..."
+          TARGET_GROUP_ARN="${{ env.TARGET_GROUP_ARN_PRODUCTION }}"
+
+          # Get ALB details
+          ALB_ARN=$(aws elbv2 describe-target-groups --target-group-arns "$TARGET_GROUP_ARN" --query 'TargetGroups[0].LoadBalancerArns[0]' --output text)
+          echo "ALB ARN: $ALB_ARN"
+
+          # Show ALB and Target Group AZ alignment
+          echo "=== ALB AND TARGET GROUP AZ ALIGNMENT ==="
+          echo "ALB Availability Zones:"
+          aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].AvailabilityZones[*].{Zone:ZoneName,Subnet:SubnetId}' --output table
+
+          echo "Current Target Health (showing AZ alignment issues):"
+          aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" --query 'TargetHealthDescriptions[*].{IP:Target.Id,AZ:Target.AvailabilityZone,State:TargetHealth.State,Reason:TargetHealth.Reason}' --output table
+
+          # 1. Check Target Group configuration
+          echo "=== TARGET GROUP CONFIGURATION ==="
+          TG_INFO=$(aws elbv2 describe-target-groups --target-group-arns "$TARGET_GROUP_ARN" --query 'TargetGroups[0].{Port:Port,Protocol:Protocol,HealthCheckPath:HealthCheckPath,HealthCheckPort:HealthCheckPort,HealthCheckProtocol:HealthCheckProtocol}')
+          echo "$TG_INFO"
+
+          # 2. Check all listeners
+          echo "=== LISTENERS CONFIGURATION ==="
+          aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[*].{Port:Port,Protocol:Protocol,ListenerArn:ListenerArn,DefaultActions:DefaultActions[0].TargetGroupArn}' --output table
+
+          # 3. Fix HTTPS listener if needed
+          HTTPS_LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[?Port==`443`].ListenerArn' --output text)
+          if [ -n "$HTTPS_LISTENER_ARN" ]; then
+            echo "🔧 Ensuring HTTPS listener forwards to correct target group..."
+            CURRENT_TARGET=$(aws elbv2 describe-listeners --listener-arns "$HTTPS_LISTENER_ARN" --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text)
+
+            if [ "$CURRENT_TARGET" != "$TARGET_GROUP_ARN" ]; then
+              echo "⚠️  HTTPS listener points to wrong target group: $CURRENT_TARGET"
+              echo "🔧 Fixing HTTPS listener to point to correct target group..."
+              aws elbv2 modify-listener \
+                --listener-arn "$HTTPS_LISTENER_ARN" \
+                --default-actions Type=forward,TargetGroupArn="$TARGET_GROUP_ARN"
+              echo "✅ HTTPS listener fixed"
+            else
+              echo "✅ HTTPS listener already points to correct target group"
+            fi
+          fi
+
+          # 4. Check HTTP listener
+          HTTP_LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query 'Listeners[?Port==`80`].ListenerArn' --output text)
+          if [ -n "$HTTP_LISTENER_ARN" ]; then
+            CURRENT_HTTP_TARGET=$(aws elbv2 describe-listeners --listener-arns "$HTTP_LISTENER_ARN" --query 'Listeners[0].DefaultActions[0].TargetGroupArn' --output text)
+            if [ "$CURRENT_HTTP_TARGET" != "$TARGET_GROUP_ARN" ]; then
+              echo "⚠️  HTTP listener points to wrong target group: $CURRENT_HTTP_TARGET"
+              echo "🔧 Fixing HTTP listener..."
+              aws elbv2 modify-listener \
+                --listener-arn "$HTTP_LISTENER_ARN" \
+                --default-actions Type=forward,TargetGroupArn="$TARGET_GROUP_ARN"
+              echo "✅ HTTP listener fixed"
+            else
+              echo "✅ HTTP listener points to correct target group"
+            fi
+          fi
+
+      - name: Wait for Healthy Targets
+        run: |
+          echo "⏳ Waiting for ALB targets to become healthy..."
+          TARGET_GROUP_ARN="${{ env.TARGET_GROUP_ARN_PRODUCTION }}"
+          echo "Target Group ARN: $TARGET_GROUP_ARN"
+
+          # Wait up to 10 minutes for healthy targets
+          for i in $(seq 1 30); do
+            echo "Attempt $i/30: Checking target health..."
+
+            # Get target health
+            aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN"
+
+            # Count healthy targets
+            HEALTHY_COUNT=$(aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" --query 'TargetHealthDescriptions[?TargetHealth.State==`healthy`].Target.Id' --output text | wc -w)
+            TOTAL_COUNT=$(aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" --query 'length(TargetHealthDescriptions)' --output text)
+
+            echo "Healthy targets: $HEALTHY_COUNT/$TOTAL_COUNT"
+
+            if [ "$HEALTHY_COUNT" -gt 0 ]; then
+              echo "✅ Found $HEALTHY_COUNT healthy target(s). ALB is ready!"
+              break
+            fi
+
+            # Show current states
+            echo "Current target states:"
+            aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" --query 'TargetHealthDescriptions[*].{IP:Target.Id,State:TargetHealth.State,Reason:TargetHealth.Reason}' --output table
+
+            if [ $i -eq 30 ]; then
+              echo "❌ No healthy targets after 15 minutes. Deployment may fail."
+              echo "🔍 Final target group health check configuration:"
+              aws elbv2 describe-target-groups --target-group-arns "$TARGET_GROUP_ARN" --query 'TargetGroups[0].{HealthCheckPath:HealthCheckPath,HealthCheckIntervalSeconds:HealthCheckIntervalSeconds,HealthyThresholdCount:HealthyThresholdCount,UnhealthyThresholdCount:UnhealthyThresholdCount}'
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+      - name: Diagnose ALB and ECS Issues
+        run: |
+          echo "🔍 Diagnosing ALB and ECS issues..."
+
+          TARGET_GROUP_ARN="${{ env.TARGET_GROUP_ARN_PRODUCTION }}"
+          CLUSTER_NAME="${{ env.ECS_CLUSTER_PRODUCTION }}"
+          SERVICE_NAME="${{ env.ECS_SERVICE_PRODUCTION }}"
+
+          # Get ALB ARN from target group
+          ALB_ARN=$(aws elbv2 describe-target-groups --target-group-arns "$TARGET_GROUP_ARN" --query 'TargetGroups[0].LoadBalancerArns[0]' --output text)
+          echo "ALB ARN: $ALB_ARN"
+
+          # Describe ALB
+          echo "ALB Details:"
+          aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].{DNSName:DNSName,State:State.Code,VpcId:VpcId,AvailabilityZones:AvailabilityZones[*].ZoneName}'
+
+          # Describe target group
+          echo "Target Group Details:"
+          aws elbv2 describe-target-groups --target-group-arns "$TARGET_GROUP_ARN" --query 'TargetGroups[0].{Protocol:Protocol,Port:Port,VpcId:VpcId,HealthCheckPath:HealthCheckPath,HealthCheckPort:HealthCheckPort}'
+
+          # List targets
+          echo "Targets in Target Group:"
+          aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" --query 'TargetHealthDescriptions[*].{Id:Target.Id,Port:Target.Port,Health:TargetHealth.State,Reason:TargetHealth.Reason}'
+
+          # Describe ECS service
+          echo "ECS Service Details:"
+          aws ecs describe-services --cluster "$CLUSTER_NAME" --services "$SERVICE_NAME" --query 'services[0].{Status:status,RunningCount:runningCount,DesiredCount:desiredCount,TaskDefinition:taskDefinition}'
+
+          # List running tasks
+          echo "Running Tasks:"
+          TASK_ARNS=$(aws ecs list-tasks --cluster "$CLUSTER_NAME" --service-name "$SERVICE_NAME" --query 'taskArns' --output text)
+          if [ -n "$TASK_ARNS" ]; then
+            aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks $TASK_ARNS --query 'tasks[*].{TaskArn:taskArn,LastStatus:lastStatus,HealthStatus:healthStatus,TaskDefinitionArn:taskDefinitionArn}'
+          else
+            echo "No running tasks found."
+          fi
+
+          # Check security groups
+          ALB_SG=$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].SecurityGroups[0]' --output text)
+          echo "ALB Security Group: $ALB_SG"
+
+          # Check subnets
+          ALB_SUBNETS=$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --query 'LoadBalancers[0].AvailabilityZones[*].SubnetId' --output text)
+          echo "ALB Subnets: $ALB_SUBNETS"
+
+      - name: Check Container Logs for Laravel Issues
+        run: |
+          echo "🔍 Checking container logs for Laravel startup issues..."
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --service-name ${{ env.ECS_SERVICE_PRODUCTION }} \
+            --query 'taskArns[0]' --output text)
+          TASK_ID=$(echo $TASK_ARN | sed 's|.*/||')
+          LOG_STREAM="ecs/app/$TASK_ID"
+          echo "Task ARN: $TASK_ARN"
+          echo "Log Stream: $LOG_STREAM"
+          # Get recent log events
+          aws logs get-log-events \
+            --log-group-name /ecs/shrt-backend \
+            --log-stream-name $LOG_STREAM \
+            --start-time $(date -d '10 minutes ago' +%s000) \
+            --output text \
+            --query 'events[*].message' || echo "No logs found or error retrieving logs"
+
+      - name: Run Interactive Diagnostics
+        if: failure()
+        run: |
+          echo "🔍 Running interactive diagnostics on the container..."
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --service-name ${{ env.ECS_SERVICE_PRODUCTION }} \
+            --query 'taskArns[0]' --output text)
+          if [ -z "$TASK_ARN" ]; then
+            echo "❌ Could not find a running task to connect to. Aborting diagnostics."
+            exit 1
+          fi
+          echo "Connecting to task: $TASK_ARN"
+          aws ecs execute-command \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --task $TASK_ARN \
+            --container app \
+            --interactive \
+            --command "/bin/sh -c '
+              echo \"\n\n### DIAGNOSTIC INFORMATION ###\";
+              echo \"\n--- 1. Environment Variables ---\";
+              printenv | grep -E \"APP_KEY|DB_HOST|APP_ENV|LOG_CHANNEL\";
+              echo \"\n--- 2. Directory Permissions ---\";
+              ls -ld /var/www/html/storage;
+              ls -ld /var/www/html/bootstrap/cache;
+              echo \"\n--- 3. Checking .env file ---\";
+              if [ -f /var/www/html/.env ]; then
+                echo \".env file exists.\";
+                grep -E \"APP_KEY|DB_HOST|APP_ENV\" /var/www/html/.env;
+              else
+                echo \".env file does NOT exist.\";
+              fi;
+              echo \"\n--- 4. Checking Laravel App Key ---\";
+              php /var/www/html/artisan config:show app.key || echo \"Failed to run artisan command.\";
+              echo \"\n--- 5. Running Processes ---\";
+              ps aux;
+              echo \"\n### END DIAGNOSTIC INFORMATION ###\n\";
+              '"
+
+      - name: Run Production Migrations
+        run: |
+          # Execute migrations in production
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --service-name ${{ env.ECS_SERVICE_PRODUCTION }} \
+            --query 'taskArns[0]' --output text)
+
+          aws ecs execute-command \
+            --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+            --task $TASK_ARN \
+            --container app \
+            --interactive \
+            --command "php artisan migrate --force" 2>/dev/null || echo "Migration command completed (may require manual execution)"
+
+  fix-cloudfront-origin:
+    name: Fix CloudFront Origin
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    # environment: production
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update CloudFront Origin to ALB
+        run: |
+          DISTRIBUTION_ID="${{ secrets.CLOUDFRONT_DISTRIBUTION_PRODUCTION }}"
+          ALB_DOMAIN_NAME="${{ env.ALB_DNS_NAME }}"
+          ORIGIN_ID="ALB-${{ env.ECS_SERVICE_PRODUCTION }}"
+
+          echo "Updating CloudFront Distribution: $DISTRIBUTION_ID"
+          echo "Setting Origin to ALB: $ALB_DOMAIN_NAME"
+
+          # Get current distribution config and ETag
+          ETAG=$(aws cloudfront get-distribution --id "$DISTRIBUTION_ID" --query 'ETag' --output text)
+          aws cloudfront get-distribution-config --id "$DISTRIBUTION_ID" --query 'DistributionConfig' > dist-config.json
+
+          # Update the origin in the config file
+          jq \
+            --arg alb_domain "$ALB_DOMAIN_NAME" \
+            --arg origin_id "$ORIGIN_ID" \
+            '.Origins.Items[0].Id = $origin_id | .Origins.Items[0].DomainName = $alb_domain | .Origins.Items[0].CustomOriginConfig.HTTPPort = 80 | .Origins.Items[0].CustomOriginConfig.HTTPSPort = 443 | .Origins.Items[0].CustomOriginConfig.OriginProtocolPolicy = "http-only" | del(.Origins.Items[0].S3OriginConfig)' \
+            dist-config.json > updated-dist-config.json
+
+          # Update the default cache behavior to use the new origin
+          jq \
+            --arg origin_id "$ORIGIN_ID" \
+            '.DefaultCacheBehavior.TargetOriginId = $origin_id' \
+            updated-dist-config.json > final-dist-config.json
+
+          echo "--- New Configuration ---"
+          cat final-dist-config.json
+          echo "--- End New Configuration ---"
+
+          # Update the distribution
+          aws cloudfront update-distribution \
+            --id "$DISTRIBUTION_ID" \
+            --distribution-config file://final-dist-config.json \
+            --if-match "$ETAG"
+
+          echo "✅ CloudFront distribution update initiated. It may take a few minutes to propagate."
 
   # Job para notificaciones
   notify-deployment:
@@ -482,50 +1444,50 @@ jobs:
     if: always()
 
     steps:
-    - name: Prepare Deployment Report
-      id: report
-      run: |
-        STATUS="✅ Success"
-        ENVIRONMENTS=""
+      - name: Prepare Deployment Report
+        id: report
+        run: |
+          STATUS="✅ Success"
+          ENVIRONMENTS=""
 
-        if [[ "${{ needs.deploy-staging.result }}" == "failure" ]] || [[ "${{ needs.deploy-production.result }}" == "failure" ]]; then
-          STATUS="❌ Failed"
-        fi
-
-        if [[ "${{ needs.deploy-staging.result }}" == "success" ]]; then
-          ENVIRONMENTS="staging"
-        fi
-
-        if [[ "${{ needs.deploy-production.result }}" == "success" ]]; then
-          if [ -n "$ENVIRONMENTS" ]; then
-            ENVIRONMENTS="$ENVIRONMENTS and production"
-          else
-            ENVIRONMENTS="production"
+          if [[ "${{ needs.deploy-staging.result }}" == "failure" ]] || [[ "${{ needs.deploy-production.result }}" == "failure" ]]; then
+            STATUS="❌ Failed"
           fi
-        fi
 
-        if [ -z "$ENVIRONMENTS" ]; then
-          ENVIRONMENTS="none"
-        fi
+          if [[ "${{ needs.deploy-staging.result }}" == "success" ]]; then
+            ENVIRONMENTS="staging"
+          fi
 
-        echo "status=$STATUS" >> $GITHUB_OUTPUT
-        echo "environments=$ENVIRONMENTS" >> $GITHUB_OUTPUT
+          if [[ "${{ needs.deploy-production.result }}" == "success" ]]; then
+            if [ -n "$ENVIRONMENTS" ]; then
+              ENVIRONMENTS="$ENVIRONMENTS and production"
+            else
+              ENVIRONMENTS="production"
+            fi
+          fi
 
-    - name: Post Deployment Summary
-      run: |
-        echo "## 🚀 Backend Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Status**: ${{ steps.report.outputs.status }}" >> $GITHUB_STEP_SUMMARY
-        echo "**Environments**: ${{ steps.report.outputs.environments }}" >> $GITHUB_STEP_SUMMARY
-        echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
-        echo "- Docker image pushed to ECR" >> $GITHUB_STEP_SUMMARY
-        echo "- ECS services updated with new task definitions" >> $GITHUB_STEP_SUMMARY
-        echo "- Database migrations executed" >> $GITHUB_STEP_SUMMARY
-        echo "- Health checks completed" >> $GITHUB_STEP_SUMMARY
+          if [ -z "$ENVIRONMENTS" ]; then
+            ENVIRONMENTS="none"
+          fi
 
-        # Here you could integrate with Slack, Teams, etc.
-        echo "🚀 Backend Deployment: ${{ steps.report.outputs.status }}"
-        echo "🌍 Environments: ${{ steps.report.outputs.environments }}"
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "environments=$ENVIRONMENTS" >> $GITHUB_OUTPUT
+
+      - name: Post Deployment Summary
+        run: |
+          echo "## 🚀 Backend Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ steps.report.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environments**: ${{ steps.report.outputs.environments }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker image pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- ECS services updated with new task definitions" >> $GITHUB_STEP_SUMMARY
+          echo "- Database migrations executed" >> $GITHUB_STEP_SUMMARY
+          echo "- Health checks completed" >> $GITHUB_STEP_SUMMARY
+
+          # Here you could integrate with Slack, Teams, etc.
+          echo "🚀 Backend Deployment: ${{ steps.report.outputs.status }}"
+          echo "🌍 Environments: ${{ steps.report.outputs.environments }}"

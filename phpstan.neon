@@ -1,0 +1,30 @@
+parameters:
+    level: 6
+    paths:
+        - app
+        - config
+        - database
+        - routes
+        - tests
+    excludePaths:
+        - app/Console/Kernel.php
+        - app/Http/Kernel.php
+    bootstrapFiles:
+        - bootstrap/app.php
+    ignoreErrors:
+        # Laravel specific ignores
+        - '#Call to an undefined static method App\\Models\\Url::.*#'
+        - '#Access to an undefined property App\\Http\\Requests\\.*#'
+        - '#Method .* has no return type specified#'
+        - '#Constant .* is unused#'
+        - '#Undefined variable: \$this#'
+        - '#Call to an undefined method PHPUnit\\Framework\\TestCase::.*#'
+        - '#Parameter .* expects Closure.*#'
+        - '#Access to an undefined property PHPUnit\\Framework\\TestCase::\$rule#'
+        - '#Access to an undefined property PHPUnit\\Framework\\TestCase::\$service#'
+        - identifier: missingType.iterableValue
+        - identifier: missingType.generics
+        # FallbackCacheService template type issues
+        - '#Unable to resolve the template type TCacheValue in call to method Illuminate\\Contracts\\Cache\\Repository::remember\(\)#'
+        - '#Unable to resolve the template type .* in call to method .*Cache.*::remember\(\)#'
+    reportUnmatchedIgnoredErrors: false

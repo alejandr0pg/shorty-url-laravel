@@ -7,7 +7,7 @@ describe('Validation Rules Unit Tests', function () {
 
     describe('ValidRfc1738Url Rule', function () {
         beforeEach(function () {
-            $this->rule = new ValidRfc1738Url();
+            $this->rule = new ValidRfc1738Url;
         });
 
         test('validates valid rfc 1738 compliant urls', function () {
@@ -17,7 +17,7 @@ describe('Validation Rules Unit Tests', function () {
                 'https://www.example.com/path',
                 'http://subdomain.example.com:8080',
                 'https://192.168.1.1/api',
-                'http://localhost:3000/development'
+                'http://localhost:3000/development',
             ];
 
             foreach ($validUrls as $url) {
@@ -41,8 +41,7 @@ describe('Validation Rules Unit Tests', function () {
                 'http://',
                 'https://',
                 'http://.',
-                'example.com', // Missing scheme - should be invalid for this rule
-                ''
+                '', // Empty string
             ];
 
             foreach ($invalidUrls as $url) {
@@ -66,7 +65,7 @@ describe('Validation Rules Unit Tests', function () {
                 [],
                 (object) ['url' => 'test'],
                 true,
-                false
+                false,
             ];
 
             foreach ($nonStringValues as $value) {
@@ -78,7 +77,7 @@ describe('Validation Rules Unit Tests', function () {
                     $errorMessage = $message;
                 });
 
-                expect($failed)->toBeTrue("Should fail for non-string value: " . gettype($value));
+                expect($failed)->toBeTrue('Should fail for non-string value: '.gettype($value));
                 expect($errorMessage)->toContain('must be a valid URL string');
             }
         });
@@ -87,20 +86,20 @@ describe('Validation Rules Unit Tests', function () {
             $testCases = [
                 [
                     'url' => 'http://',
-                    'expectedErrorParts' => ['Invalid URL format']
+                    'expectedErrorParts' => ['Invalid URL format', 'URL must follow the pattern'],
                 ],
                 [
                     'url' => 'ftp://example.com',
-                    'expectedErrorParts' => ['Uncommon scheme']
+                    'expectedErrorParts' => ['Uncommon scheme'],
                 ],
                 [
                     'url' => 'http://256.256.256.256',
-                    'expectedErrorParts' => ['Invalid host']
+                    'expectedErrorParts' => ['Invalid host'],
                 ],
                 [
                     'url' => 'http://example.com:99999',
-                    'expectedErrorParts' => ['Invalid port']
-                ]
+                    'expectedErrorParts' => ['Invalid port'],
+                ],
             ];
 
             foreach ($testCases as $testCase) {
@@ -115,7 +114,7 @@ describe('Validation Rules Unit Tests', function () {
                 expect($failed)->toBeTrue("Should fail for: {$testCase['url']}");
 
                 foreach ($testCase['expectedErrorParts'] as $expectedPart) {
-                    expect($errorMessage)->toContain($expectedPart,
+                    expect(strpos($errorMessage, $expectedPart) !== false)->toBeTrue(
                         "Error message should contain '{$expectedPart}' for URL: {$testCase['url']}. Got: {$errorMessage}");
                 }
             }
@@ -124,13 +123,13 @@ describe('Validation Rules Unit Tests', function () {
 
     describe('ValidUrlScheme Rule', function () {
         test('validates default allowed schemes', function () {
-            $rule = new ValidUrlScheme();
+            $rule = new ValidUrlScheme;
 
             $validUrls = [
                 'http://example.com',
                 'https://example.com',
                 'HTTP://example.com', // Case insensitive
-                'HTTPS://example.com'
+                'HTTPS://example.com',
             ];
 
             foreach ($validUrls as $url) {
@@ -145,7 +144,7 @@ describe('Validation Rules Unit Tests', function () {
         });
 
         test('rejects disallowed schemes with default config', function () {
-            $rule = new ValidUrlScheme();
+            $rule = new ValidUrlScheme;
 
             $invalidUrls = [
                 'ftp://example.com',
@@ -153,7 +152,7 @@ describe('Validation Rules Unit Tests', function () {
                 'ssh://example.com',
                 'file://example.com',
                 'javascript:alert(1)',
-                'data:text/html,test'
+                'data:text/html,test',
             ];
 
             foreach ($invalidUrls as $url) {
@@ -176,7 +175,7 @@ describe('Validation Rules Unit Tests', function () {
             $validUrls = [
                 'http://example.com',
                 'https://example.com',
-                'ftp://example.com'
+                'ftp://example.com',
             ];
 
             foreach ($validUrls as $url) {
@@ -198,13 +197,13 @@ describe('Validation Rules Unit Tests', function () {
         });
 
         test('rejects urls without schemes', function () {
-            $rule = new ValidUrlScheme();
+            $rule = new ValidUrlScheme;
 
             $urlsWithoutScheme = [
                 'example.com',
                 'www.example.com',
                 '//example.com',
-                'localhost:8080'
+                'localhost:8080',
             ];
 
             foreach ($urlsWithoutScheme as $url) {
@@ -221,8 +220,27 @@ describe('Validation Rules Unit Tests', function () {
             }
         });
 
+        test('accepts urls that can be sanitized', function () {
+            $rule = new ValidRfc1738Url;
+            $sanitizableUrls = [
+                'example.com', // Will get https:// added
+                'subdomain.example.com',
+                'example.com/path',
+            ];
+
+            foreach ($sanitizableUrls as $url) {
+                $failed = false;
+
+                $rule->validate('url', $url, function ($message) use (&$failed) {
+                    $failed = true;
+                });
+
+                expect($failed)->toBeFalse("Should accept sanitizable URL: {$url}");
+            }
+        });
+
         test('rejects non-string values', function () {
-            $rule = new ValidUrlScheme();
+            $rule = new ValidUrlScheme;
 
             $nonStringValues = [123, null, [], true, false];
 
@@ -235,13 +253,13 @@ describe('Validation Rules Unit Tests', function () {
                     $errorMessage = $message;
                 });
 
-                expect($failed)->toBeTrue("Should reject non-string: " . gettype($value));
+                expect($failed)->toBeTrue('Should reject non-string: '.gettype($value));
                 expect($errorMessage)->toContain('must be a valid URL string');
             }
         });
 
         test('handles malformed urls gracefully', function () {
-            $rule = new ValidUrlScheme();
+            $rule = new ValidUrlScheme;
 
             $malformedUrls = [
                 '://',
@@ -250,7 +268,7 @@ describe('Validation Rules Unit Tests', function () {
                 ':',
                 'scheme:',
                 'scheme:/',
-                ''
+                '',
             ];
 
             foreach ($malformedUrls as $url) {
@@ -270,7 +288,7 @@ describe('Validation Rules Unit Tests', function () {
         });
 
         test('case insensitive scheme validation', function () {
-            $rule = new ValidUrlScheme();
+            $rule = new ValidUrlScheme;
 
             $casedUrls = [
                 'HTTP://example.com',
@@ -278,7 +296,7 @@ describe('Validation Rules Unit Tests', function () {
                 'Http://example.com',
                 'Https://example.com',
                 'hTTp://example.com',
-                'hTTpS://example.com'
+                'hTTpS://example.com',
             ];
 
             foreach ($casedUrls as $url) {
@@ -311,7 +329,7 @@ describe('Validation Rules Unit Tests', function () {
 
     describe('Rule Integration', function () {
         test('both rules can be used together', function () {
-            $rfc1738Rule = new ValidRfc1738Url();
+            $rfc1738Rule = new ValidRfc1738Url;
             $schemeRule = new ValidUrlScheme(['http', 'https']);
 
             $testUrl = 'https://example.com/path';
@@ -350,7 +368,7 @@ describe('Validation Rules Unit Tests', function () {
         });
 
         test('rules provide different but complementary validation', function () {
-            $rfc1738Rule = new ValidRfc1738Url();
+            $rfc1738Rule = new ValidRfc1738Url;
             $schemeRule = new ValidUrlScheme(['ftp', 'ftps']); // Different allowed schemes
 
             $testUrl = 'ftp://example.com';

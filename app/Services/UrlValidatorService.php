@@ -10,10 +10,12 @@ class UrlValidatorService
 {
     // RFC 1738 compliant patterns
     private const SCHEME_PATTERN = '/^[a-zA-Z][a-zA-Z0-9+.-]*$/';
+
     private const COMMON_SCHEMES = ['http', 'https', 'ftp', 'ftps'];
 
     // Characters that need encoding according to RFC 1738
     private const UNSAFE_CHARACTERS = ['<', '>', '"', ' ', '{', '}', '|', '\\', '^', '`'];
+
     private const SAFE_CHARACTERS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$-_.+!*\'(),';
 
     /**
@@ -25,6 +27,7 @@ class UrlValidatorService
 
         if (empty($url)) {
             $errors[] = 'URL is required';
+
             return ['valid' => false, 'errors' => $errors, 'parts' => null];
         }
 
@@ -33,8 +36,9 @@ class UrlValidatorService
 
         // Basic URL structure validation on sanitized URL
         $pattern = '/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^:\/\s]+)(:\d+)?(\/.*)?$/';
-        if (!preg_match($pattern, $sanitizedUrl, $matches)) {
+        if (! preg_match($pattern, $sanitizedUrl, $matches)) {
             $errors[] = 'Invalid URL format. URL must follow the pattern: scheme://host[:port][/path]';
+
             return ['valid' => false, 'errors' => $errors, 'parts' => null];
         }
 
@@ -44,27 +48,27 @@ class UrlValidatorService
         [$fullMatch, $scheme, $host, $port, $path] = $matches + [null, null, null, null, null];
 
         // Validate scheme
-        if (!$this->validateScheme($scheme)) {
+        if (! $this->validateScheme($scheme)) {
             $errors[] = "Invalid scheme: {$scheme}. Scheme must start with a letter and contain only letters, digits, +, -, or .";
         }
 
         // Check for common schemes (only allow http/https for our use case)
-        if (!in_array(strtolower($scheme), ['http', 'https'])) {
+        if (! in_array(strtolower($scheme), ['http', 'https'])) {
             $errors[] = "Uncommon scheme: {$scheme}. Common schemes are: http, https";
         }
 
         // Validate host
-        if (!$this->validateHost($host)) {
+        if (! $this->validateHost($host)) {
             $errors[] = "Invalid host: {$host}. Host must be a valid domain name or IP address";
         }
 
         // Validate port if present
-        if ($port && !$this->validatePort(ltrim($port, ':'))) {
-            $errors[] = "Invalid port: " . ltrim($port, ':') . ". Port must be a number between 1 and 65535";
+        if ($port && ! $this->validatePort(ltrim($port, ':'))) {
+            $errors[] = 'Invalid port: '.ltrim($port, ':').'. Port must be a number between 1 and 65535';
         }
 
         // Validate path if present
-        if ($path && !$this->validatePath($path)) {
+        if ($path && ! $this->validatePath($path)) {
             $errors[] = "Invalid path: {$path}. Path contains invalid characters";
         }
 
@@ -80,8 +84,8 @@ class UrlValidatorService
                 'scheme' => $scheme,
                 'host' => $host,
                 'port' => $port ? ltrim($port, ':') : null,
-                'path' => $path
-            ] : null
+                'path' => $path,
+            ] : null,
         ];
     }
 
@@ -109,6 +113,7 @@ class UrlValidatorService
 
         // Domain name validation
         $domainPattern = '/^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z]{2,}$/';
+
         return preg_match($domainPattern, $host) === 1;
     }
 
@@ -118,6 +123,7 @@ class UrlValidatorService
     private function validatePort(string $port): bool
     {
         $portNum = (int) $port;
+
         return $portNum > 0 && $portNum <= 65535;
     }
 
@@ -149,13 +155,13 @@ class UrlValidatorService
         $url = trim($url);
 
         // Ensure scheme is present
-        if (!preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//', $url)) {
-            $url = 'https://' . $url;
+        if (! preg_match('/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//', $url)) {
+            $url = 'https://'.$url;
         }
 
         // Parse URL components
         $pattern = '/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^:\/\s]+)(:\d+)?(\/.*)?$/';
-        if (!preg_match($pattern, $url, $matches)) {
+        if (! preg_match($pattern, $url, $matches)) {
             // If URL doesn't match pattern, do basic sanitization
             return $this->encodeUnsafeCharacters($url);
         }
@@ -170,7 +176,7 @@ class UrlValidatorService
         // Sanitize path with proper encoding
         $sanitizedPath = $path ? $this->sanitizePath($path) : '';
 
-        return $sanitizedScheme . '://' . $sanitizedHost . $sanitizedPort . $sanitizedPath;
+        return $sanitizedScheme.'://'.$sanitizedHost.$sanitizedPort.$sanitizedPath;
     }
 
     /**
@@ -199,12 +205,14 @@ class UrlValidatorService
             // Don't encode forward slashes in path
             if ($char === '/') {
                 $result .= $char;
+
                 continue;
             }
 
             // Don't encode reserved characters that are valid
             if (strpos('!*\'();:@&=+$,/?#[]', $char) !== false) {
                 $result .= $char;
+
                 continue;
             }
 
@@ -233,47 +241,54 @@ class UrlValidatorService
      */
     public function normalizeUrl(string $url): string
     {
-        $sanitized = $this->sanitizeUrl($url);
+        // Assume URL is already sanitized
+        $sanitized = $url;
 
-        $parsedUrl = parse_url($sanitized);
-        if (!$parsedUrl) {
+        // Use regex to parse URL components without decoding
+        $pattern = '/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^:\/\s]+)(:\d+)?(\/[^?]*)?(\?[^#]*)?(#.*)?$/';
+        if (! preg_match($pattern, $sanitized, $matches)) {
             return $sanitized;
         }
 
+        [$fullMatch, $scheme, $host, $port, $path, $query, $fragment] = $matches + [null, null, null, null, null, null, null];
+
         // Normalize scheme and host to lowercase
-        $scheme = strtolower($parsedUrl['scheme'] ?? '');
-        $host = strtolower($parsedUrl['host'] ?? '');
-        $port = $parsedUrl['port'] ?? null;
-        $path = $parsedUrl['path'] ?? '';
-        $query = $parsedUrl['query'] ?? '';
-        $fragment = $parsedUrl['fragment'] ?? '';
+        $scheme = strtolower($scheme);
+        $host = strtolower($host);
 
         // Remove default ports
-        if (($scheme === 'http' && $port === 80) ||
-            ($scheme === 'https' && $port === 443) ||
-            ($scheme === 'ftp' && $port === 21)) {
-            $port = null;
+        if ($port) {
+            $portNum = (int) ltrim($port, ':');
+            if (($scheme === 'http' && $portNum === 80) ||
+                ($scheme === 'https' && $portNum === 443) ||
+                ($scheme === 'ftp' && $portNum === 21)) {
+                $port = null;
+            }
         }
 
         // Normalize path - remove consecutive slashes
-        $path = preg_replace('/\/+/', '/', $path);
+        if ($path) {
+            $path = preg_replace('/\/+/', '/', $path);
 
-        // Remove trailing slash for non-root paths
-        if (strlen($path) > 1 && substr($path, -1) === '/') {
-            $path = substr($path, 0, -1);
+            // Remove trailing slash for non-root paths
+            if (strlen($path) > 1 && substr($path, -1) === '/') {
+                $path = substr($path, 0, -1);
+            }
         }
 
         // Build normalized URL
-        $normalized = $scheme . '://' . $host;
+        $normalized = $scheme.'://'.$host;
         if ($port) {
-            $normalized .= ':' . $port;
+            $normalized .= $port;
         }
-        $normalized .= $path;
+        if ($path) {
+            $normalized .= $path;
+        }
         if ($query) {
-            $normalized .= '?' . $query;
+            $normalized .= $query;
         }
         if ($fragment) {
-            $normalized .= '#' . $fragment;
+            $normalized .= $fragment;
         }
 
         return $normalized;
@@ -303,7 +318,7 @@ class UrlValidatorService
             'sanitized' => $sanitized,
             'normalized' => $normalized,
             'validation' => $validation,
-            'needs_sanitization' => $needsSanitization
+            'needs_sanitization' => $needsSanitization,
         ];
     }
 }

@@ -3,8 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
+/**
+ * @property int $id
+ * @property string $original_url
+ * @property string $short_code
+ * @property string $device_id
+ * @property int $clicks
+ * @property string|null $expires_at
+ * @property string $created_at
+ * @property string $updated_at
+ */
 class Url extends Model
 {
     protected $fillable = [

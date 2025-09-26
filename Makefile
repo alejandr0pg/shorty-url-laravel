@@ -75,12 +75,20 @@ typecheck: ## Run TypeScript type checking
 	cd frontend && npm run typecheck
 
 # Build Commands
-build: ## Build for production (both backend and frontend)
-	@echo "$(GREEN)Building backend...$(NC)"
-	composer install --optimize-autoloader --no-dev
+prepare-laravel: ## Prepare Laravel app for production
+	@echo "$(GREEN)Preparing Laravel for production...$(NC)"
+	make setup-permissions
+	composer install --optimize-autoloader --no-dev --no-interaction
+	php artisan optimize:clear
 	php artisan config:cache
 	php artisan route:cache
 	php artisan view:cache
+	php artisan event:cache
+	@echo "$(GREEN)Laravel preparation complete!$(NC)"
+
+build: ## Build for production (both backend and frontend)
+	@echo "$(GREEN)Building backend...$(NC)"
+	make prepare-laravel
 	@echo "$(GREEN)Building frontend...$(NC)"
 	cd frontend && npm ci --omit=dev
 	cd frontend && npm run build:production
@@ -104,15 +112,27 @@ build-docker: ## Build Docker images
 	@echo "$(GREEN)Docker images built!$(NC)"
 
 # AWS Deployment Commands
+setup-permissions: ## Setup proper permissions for Laravel deployment
+	@echo "$(GREEN)Setting up Laravel storage permissions...$(NC)"
+	mkdir -p storage/framework/{cache,sessions,testing,views}
+	mkdir -p storage/app/{private,public}
+	mkdir -p storage/logs
+	mkdir -p bootstrap/cache
+	chmod -R 775 storage
+	chmod -R 775 bootstrap/cache
+	@echo "$(GREEN)Permissions set successfully!$(NC)"
+
 build-prod: ## Build production Docker image
 	@echo "$(GREEN)Building production Docker image...$(NC)"
+	make prepare-laravel
 	docker build -f Dockerfile --build-arg APP_ENV=production -t shrt-backend:latest .
 	@echo "$(GREEN)Production image built!$(NC)"
 
 login-ecr: ## Login to Amazon ECR
 	@echo "$(GREEN)Logging into Amazon ECR...$(NC)"
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 109995068952.dkr.ecr.us-east-1.amazonaws.com
-	tag-prod: ## Tag image for ECR
+
+tag-prod: ## Tag image for ECR
 	@echo "$(GREEN)Tagging image for ECR...$(NC)"
 	docker tag shrt-backend:latest 109995068952.dkr.ecr.us-east-1.amazonaws.com/shrt-backend:latest
 	docker tag shrt-backend:latest 109995068952.dkr.ecr.us-east-1.amazonaws.com/shrt-backend:$(shell git rev-parse --short HEAD)
@@ -126,21 +146,41 @@ push-prod: ## Push image to ECR
 
 deploy-staging: ## Deploy to AWS ECS staging
 	@echo "$(GREEN)Deploying to ECS staging...$(NC)"
-	aws ecs update-service --cluster shrt-staging-cluster --service shrt-backend-staging --force-new-deployment
-	aws ecs wait services-stable --cluster shrt-staging-cluster --services shrt-backend-staging
+	aws ecs update-service --cluster shrt-staging-cluster --service shrt-staging-service --force-new-deployment
+	aws ecs wait services-stable --cluster shrt-staging-cluster --services shrt-staging-service
 	@echo "$(GREEN)Staging deployment complete!$(NC)"
 
 deploy-prod: ## Deploy to AWS ECS production
 	@echo "$(GREEN)Deploying to ECS production...$(NC)"
-	aws ecs update-service --cluster shrt-production-cluster --service shrt-backend-production --force-new-deployment
-	aws ecs wait services-stable --cluster shrt-production-cluster --services shrt-backend-production
+	aws ecs update-service --cluster shrt-production-cluster --service shrt-production-service --force-new-deployment
+	aws ecs wait services-stable --cluster shrt-production-cluster --services shrt-production-service
 	@echo "$(GREEN)Production deployment complete!$(NC)"
+
+check-aws-permissions: ## Check and fix permissions for AWS deployment
+	@echo "$(GREEN)Checking AWS deployment permissions...$(NC)"
+	make setup-permissions
+	@echo "$(GREEN)Verifying storage directories exist...$(NC)"
+	test -d storage/app/private || mkdir -p storage/app/private
+	test -d storage/app/public || mkdir -p storage/app/public
+	test -d storage/framework/cache || mkdir -p storage/framework/cache
+	test -d storage/framework/sessions || mkdir -p storage/framework/sessions
+	test -d storage/framework/testing || mkdir -p storage/framework/testing
+	test -d storage/framework/views || mkdir -p storage/framework/views
+	test -d storage/logs || mkdir -p storage/logs
+	@echo "$(GREEN)Setting proper ownership for Docker build...$(NC)"
+	find storage -type f -exec chmod 664 {} \;
+	find storage -type d -exec chmod 775 {} \;
+	find bootstrap/cache -type f -exec chmod 664 {} \;
+	find bootstrap/cache -type d -exec chmod 775 {} \;
+	@echo "$(GREEN)AWS deployment permissions verified!$(NC)"
 
 deploy: ## Full deployment pipeline (backend + frontend)
 	@echo "$(GREEN)Starting full deployment pipeline...$(NC)"
+	make check-aws-permissions
 	make build-prod
 	make tag-prod
 	make push-prod
+	make deploy-prod
 	make deploy-frontend-prod
 	@echo "$(GREEN)Full deployment complete!$(NC)"
 

@@ -4,7 +4,7 @@ use App\Services\UrlValidatorService;
 
 describe('UrlValidatorService', function () {
     beforeEach(function () {
-        $this->service = new UrlValidatorService();
+        $this->service = new UrlValidatorService;
     });
 
     describe('validateUrl method', function () {
@@ -23,7 +23,7 @@ describe('UrlValidatorService', function () {
                 'http://subdomain.example.com',
                 'https://example.com/path',
                 'http://192.168.1.1',
-                'https://localhost:8080'
+                'https://localhost:8080',
             ];
 
             foreach ($validUrls as $url) {
@@ -40,7 +40,7 @@ describe('UrlValidatorService', function () {
                 'https://',
                 '://example.com',
                 'http://.',
-                'http://..'
+                'http://..',
             ];
 
             foreach ($invalidUrls as $url) {
@@ -53,7 +53,7 @@ describe('UrlValidatorService', function () {
             // These should be sanitized and then validated
             $sanitizableUrls = [
                 'example.com', // Will get https:// added
-                'ftp://example.com' // Will be rejected due to scheme
+                'ftp://example.com', // Will be rejected due to scheme
             ];
 
             $result = $this->service->validateUrl('example.com');
@@ -90,7 +90,7 @@ describe('UrlValidatorService', function () {
                 'http://sub.domain.example.com',
                 'http://192.168.1.1',
                 'http://10.0.0.1',
-                'http://localhost'
+                'http://localhost',
             ];
 
             foreach ($validHosts as $url) {
@@ -123,7 +123,7 @@ describe('UrlValidatorService', function () {
                 'http://example.com:443',
                 'http://example.com:8080',
                 'http://example.com:1',
-                'http://example.com:65535'
+                'http://example.com:65535',
             ];
 
             foreach ($validPorts as $url) {
@@ -138,7 +138,7 @@ describe('UrlValidatorService', function () {
                 'http://example.com:-1',
                 'http://example.com:abc',
                 'http://example.com:',
-                'http://example.com::80'
+                'http://example.com::80',
             ];
 
             foreach ($invalidPorts as $url) {
@@ -155,7 +155,7 @@ describe('UrlValidatorService', function () {
                 'http://example.com/path/to/resource',
                 'http://example.com/path-with-dashes',
                 'http://example.com/path_with_underscores',
-                'http://example.com/path123'
+                'http://example.com/path123',
             ];
 
             foreach ($validPaths as $url) {
@@ -169,7 +169,7 @@ describe('UrlValidatorService', function () {
                 'http://example.com/path"with"quotes',
                 'http://example.com/path<with>brackets',
                 'http://example.com/path{with}braces',
-                'http://example.com/path|with|pipes'
+                'http://example.com/path|with|pipes',
             ];
 
             foreach ($pathsWithUnsafeChars as $url) {
@@ -181,17 +181,17 @@ describe('UrlValidatorService', function () {
         test('validates url length', function () {
             // URL just under 2048 characters should work
             $baseUrl = 'http://example.com/';
-            $urlUnder2048 = $baseUrl . str_repeat('a', 1900 - strlen($baseUrl));
+            $urlUnder2048 = $baseUrl.str_repeat('a', 1900 - strlen($baseUrl));
             $result = $this->service->validateUrl($urlUnder2048);
             expect($result['valid'])->toBeTrue();
 
             // Shorter URL should work
-            $shortUrl = 'http://example.com/' . str_repeat('a', 100);
+            $shortUrl = 'http://example.com/'.str_repeat('a', 100);
             $result = $this->service->validateUrl($shortUrl);
             expect($result['valid'])->toBeTrue();
 
             // URL over 2048 characters
-            $urlOver2048 = 'http://example.com/' . str_repeat('a', 2048);
+            $urlOver2048 = 'http://example.com/'.str_repeat('a', 2048);
             $result = $this->service->validateUrl($urlOver2048);
             expect($result['valid'])->toBeFalse();
             expect($result['errors'])->toContain('URL is too long. Maximum length is 2048 characters');
@@ -205,7 +205,7 @@ describe('UrlValidatorService', function () {
                 'scheme' => 'https',
                 'host' => 'subdomain.example.com',
                 'port' => '8080',
-                'path' => '/path/to/resource'
+                'path' => '/path/to/resource',
             ]);
         });
 
@@ -276,7 +276,7 @@ describe('UrlValidatorService', function () {
             $testCases = [
                 ['http://example.com:80/path', 'http://example.com/path'],
                 ['https://example.com:443/path', 'https://example.com/path'],
-                ['ftp://example.com:21/path', 'ftp://example.com/path']
+                ['ftp://example.com:21/path', 'ftp://example.com/path'],
             ];
 
             foreach ($testCases as [$input, $expected]) {
@@ -322,7 +322,7 @@ describe('UrlValidatorService', function () {
             $cleanUrls = [
                 'https://example.com',
                 'http://example.com/path',
-                'https://subdomain.example.com:8080/path'
+                'https://subdomain.example.com:8080/path',
             ];
 
             foreach ($cleanUrls as $url) {
@@ -336,7 +336,7 @@ describe('UrlValidatorService', function () {
                 '  https://example.com  ', // Whitespace
                 'example.com', // Missing scheme
                 'HTTPS://EXAMPLE.COM', // Uppercase
-                'https://example.com/path with spaces' // Unsafe characters
+                'https://example.com/path with spaces', // Unsafe characters
             ];
 
             foreach ($dirtyUrls as $url) {
@@ -357,7 +357,7 @@ describe('UrlValidatorService', function () {
                 'sanitized',
                 'normalized',
                 'validation',
-                'needs_sanitization'
+                'needs_sanitization',
             ]);
 
             expect($result['original'])->toBe($inputUrl);
@@ -422,15 +422,15 @@ describe('UrlValidatorService', function () {
             }
 
             // Very short domain might not pass domain validation
-            $result = $this->service->validateUrl("http://a.b");
-            expect($result['valid'])->toBeFalse("Very short domain should be invalid");
+            $result = $this->service->validateUrl('http://a.b');
+            expect($result['valid'])->toBeFalse('Very short domain should be invalid');
         });
 
         test('needsEncoding method integration', function () {
             $urlsNeedingEncoding = [
                 'https://example.com/path with spaces',
                 'https://example.com/path"with"quotes',
-                'https://example.com/path<with>brackets'
+                'https://example.com/path<with>brackets',
             ];
 
             foreach ($urlsNeedingEncoding as $url) {

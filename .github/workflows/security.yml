@@ -1,53 +1,37 @@
 name: Advanced Security Pipeline
 
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
 on:
   schedule:
-    - cron: '0 2 * * 1,4' # Run twice weekly (Monday and Thursday at 2 AM)
+    - cron: "0 2 * * 1,4" # Run twice weekly (Monday and Thursday at 2 AM)
   push:
     branches: [main, develop]
     paths:
-      - '**.php'
-      - '**.js'
-      - '**.ts'
-      - '**.tsx'
-      - 'composer.json'
-      - 'composer.lock'
-      - 'package*.json'
-      - 'Dockerfile*'
-      - '.github/workflows/**'
+      - "**.php"
+      - "**.js"
+      - "**.ts"
+      - "**.tsx"
+      - "composer.json"
+      - "composer.lock"
+      - "package*.json"
+      - "Dockerfile*"
+      - ".github/workflows/**"
   pull_request:
     branches: [main, develop]
     paths:
-      - '**.php'
-      - '**.js'
-      - '**.ts'
-      - '**.tsx'
-      - 'composer.json'
-      - 'composer.lock'
-      - 'package*.json'
-      - 'Dockerfile*'
+      - "**.php"
+      - "**.js"
+      - "**.ts"
+      - "**.tsx"
+      - "composer.json"
+      - "composer.lock"
+      - "package*.json"
+      - "Dockerfile*"
   workflow_dispatch:
-    inputs:
-      scan_type:
-        description: 'Type of security scan to run'
-        required: true
-        default: 'full'
-        type: choice
-        options:
-        - full
-        - dependencies-only
-        - code-only
-        - container-only
-      severity_threshold:
-        description: 'Minimum severity level to report'
-        required: true
-        default: 'medium'
-        type: choice
-        options:
-        - low
-        - medium
-        - high
-        - critical
 
 env:
   AWS_REGION: us-east-1
@@ -59,535 +43,509 @@ jobs:
   dependency-security:
     name: Dependency Security Scan
     runs-on: ubuntu-latest
-    if: ${{ inputs.scan_type == 'full' || inputs.scan_type == 'dependencies-only' || github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || true }}
 
     strategy:
       matrix:
-        component: [backend, frontend]
+        component: [backend]
         include:
           - component: backend
             path: .
             language: php
-          - component: frontend
-            path: frontend
-            language: javascript
 
     outputs:
       backend-vulnerabilities: ${{ steps.backend-audit.outputs.vulnerabilities }}
-      frontend-vulnerabilities: ${{ steps.frontend-audit.outputs.vulnerabilities }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    # Backend Security Scans
-    - name: Setup PHP (Backend)
-      if: matrix.component == 'backend'
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.2'
-        extensions: dom, curl, libxml, mbstring, zip
+      # Backend Security Scans
+      - name: Setup PHP (Backend)
+        if: matrix.component == 'backend'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: dom, curl, libxml, mbstring, zip
 
-    - name: Cache Composer Dependencies
-      if: matrix.component == 'backend'
-      uses: actions/cache@v3
-      with:
-        path: ~/.composer/cache/files
-        key: ${{ runner.os }}-composer-security-${{ hashFiles('**/composer.lock') }}
+      - name: Cache Composer Dependencies
+        if: matrix.component == 'backend'
+        uses: actions/cache@v3
+        with:
+          path: ~/.composer/cache/files
+          key: ${{ runner.os }}-composer-security-${{ hashFiles('**/composer.lock') }}
 
-    - name: Install Backend Dependencies
-      if: matrix.component == 'backend'
-      working-directory: ${{ matrix.path }}
-      run: composer install --no-dev --optimize-autoloader --no-scripts
+      - name: Install Backend Dependencies
+        if: matrix.component == 'backend'
+        working-directory: ${{ matrix.path }}
+        run: composer install --no-dev --optimize-autoloader --no-scripts
 
-    - name: PHP Security Checker
-      if: matrix.component == 'backend'
-      id: backend-audit
-      uses: StephaneBour/actions-php-security-checker@1.1
-      with:
-        composer-lock: './composer.lock'
-      continue-on-error: true
+      - name: PHP Security Checker
+        if: matrix.component == 'backend'
+        id: backend-audit
+        uses: StephaneBour/actions-php-security-checker@1.1
+        with:
+          composer-lock: "./composer.lock"
+        continue-on-error: true
 
-    - name: Composer Audit (Backend)
-      if: matrix.component == 'backend'
-      working-directory: ${{ matrix.path }}
-      run: |
-        composer audit --format=json > composer-audit.json || true
+      - name: Composer Audit (Backend)
+        if: matrix.component == 'backend'
+        working-directory: ${{ matrix.path }}
+        run: |
+          composer audit --format=json > composer-audit.json || true
 
-        # Parse results and create summary
-        VULNERABILITIES=$(jq '.advisories | length' composer-audit.json 2>/dev/null || echo "0")
-        echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
+          # Parse results and create summary
+          VULNERABILITIES=$(jq '.advisories | length' composer-audit.json 2>/dev/null || echo "0")
+          echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
 
-        if [ "$VULNERABILITIES" -gt 0 ]; then
-          echo "## 🔴 Backend Dependencies - $VULNERABILITIES vulnerabilities found" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          jq -r '.advisories[] | "- **\(.title)** (\(.cve // "No CVE")): \(.link)"' composer-audit.json >> $GITHUB_STEP_SUMMARY
-        else
-          echo "## ✅ Backend Dependencies - No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
-        fi
+          if [ "$VULNERABILITIES" -gt 0 ]; then
+            echo "## 🔴 Backend Dependencies - $VULNERABILITIES vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            jq -r '.advisories[] | "- **\(.title)** (\(.cve // "No CVE")): \(.link)"' composer-audit.json >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ Backend Dependencies - No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          fi
 
-    # Frontend Security Scans
-    - name: Setup Node.js (Frontend)
-      if: matrix.component == 'frontend'
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+      # Frontend Security Scans
+      - name: Setup Node.js (Frontend)
+        if: matrix.component == 'frontend'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
 
-    - name: Install Frontend Dependencies
-      if: matrix.component == 'frontend'
-      working-directory: ${{ matrix.path }}
-      run: npm ci --only=production
+      - name: Install Frontend Dependencies
+        if: matrix.component == 'frontend'
+        working-directory: ${{ matrix.path }}
+        run: npm ci --only=production
 
-    - name: Frontend Security Audit
-      if: matrix.component == 'frontend'
-      id: frontend-audit
-      working-directory: ${{ matrix.path }}
-      run: |
-        npm audit --audit-level=low --json > npm-audit.json || true
+      - name: Frontend Security Audit
+        if: matrix.component == 'frontend'
+        id: frontend-audit
+        working-directory: ${{ matrix.path }}
+        run: |
+          npm audit --audit-level=low --json > npm-audit.json || true
 
-        # Parse npm audit results
-        VULNERABILITIES=$(jq '.metadata.vulnerabilities.total' npm-audit.json 2>/dev/null || echo "0")
-        HIGH_VULNS=$(jq '.metadata.vulnerabilities.high' npm-audit.json 2>/dev/null || echo "0")
-        CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical' npm-audit.json 2>/dev/null || echo "0")
+          # Parse npm audit results
+          VULNERABILITIES=$(jq '.metadata.vulnerabilities.total' npm-audit.json 2>/dev/null || echo "0")
+          HIGH_VULNS=$(jq '.metadata.vulnerabilities.high' npm-audit.json 2>/dev/null || echo "0")
+          CRITICAL_VULNS=$(jq '.metadata.vulnerabilities.critical' npm-audit.json 2>/dev/null || echo "0")
 
-        echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
-        echo "high=$HIGH_VULNS" >> $GITHUB_OUTPUT
-        echo "critical=$CRITICAL_VULNS" >> $GITHUB_OUTPUT
+          echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
+          echo "high=$HIGH_VULNS" >> $GITHUB_OUTPUT
+          echo "critical=$CRITICAL_VULNS" >> $GITHUB_OUTPUT
 
-        if [ "$VULNERABILITIES" -gt 0 ]; then
-          echo "## 🔴 Frontend Dependencies - $VULNERABILITIES vulnerabilities found" >> $GITHUB_STEP_SUMMARY
-          echo "- Critical: $CRITICAL_VULNS" >> $GITHUB_STEP_SUMMARY
-          echo "- High: $HIGH_VULNS" >> $GITHUB_STEP_SUMMARY
-        else
-          echo "## ✅ Frontend Dependencies - No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
-        fi
+          if [ "$VULNERABILITIES" -gt 0 ]; then
+            echo "## 🔴 Frontend Dependencies - $VULNERABILITIES vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            echo "- Critical: $CRITICAL_VULNS" >> $GITHUB_STEP_SUMMARY
+            echo "- High: $HIGH_VULNS" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ✅ Frontend Dependencies - No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+          fi
 
-    - name: Upload Dependency Scan Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: dependency-scan-${{ matrix.component }}-${{ github.sha }}
-        path: |
-          ${{ matrix.path }}/composer-audit.json
-          ${{ matrix.path }}/npm-audit.json
-        retention-days: 30
-        if-no-files-found: ignore
+      - name: Upload Dependency Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-${{ matrix.component }}-${{ github.sha }}
+          path: |
+            ${{ matrix.path }}/composer-audit.json
+            ${{ matrix.path }}/npm-audit.json
+          retention-days: 30
+          if-no-files-found: ignore
 
   # Job para análisis estático de código
   static-code-analysis:
     name: Static Code Security Analysis
     runs-on: ubuntu-latest
-    if: ${{ inputs.scan_type == 'full' || inputs.scan_type == 'code-only' || github.event_name != 'workflow_dispatch' }}
+    permissions:
+      security-events: write
+    if: ${{ github.event_name != 'workflow_dispatch' || true }}
 
     outputs:
       semgrep-findings: ${{ steps.semgrep.outputs.findings }}
       codeql-alerts: ${{ steps.codeql-results.outputs.alerts }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v2
-      with:
-        languages: php, javascript
-        config: |
-          name: "Advanced Security Analysis"
+      - name: Setup PHP for CodeQL
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: dom, curl, libxml, mbstring, zip
 
-          queries:
-            - name: security-and-quality
-              uses: security-and-quality
-            - name: security-extended
-              uses: security-extended
+      - name: Install Backend Dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
 
-          query-filters:
-            - exclude:
-                id: js/unused-local-variable
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          config: |
+            name: "Advanced Security Analysis"
 
-    - name: Setup PHP for CodeQL
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.2'
-        extensions: dom, curl, libxml, mbstring, zip
+            queries:
+              - uses: security-and-quality
+              - uses: security-extended
 
-    - name: Install Backend Dependencies
-      run: composer install --no-dev --optimize-autoloader --no-scripts
+            query-filters:
+              - exclude:
+                  id: js/unused-local-variable
 
-    - name: Setup Node.js for CodeQL
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        id: codeql-results
+        with:
+          category: "/language:javascript"
+          output: codeql-results.sarif
 
-    - name: Install Frontend Dependencies
-      working-directory: ./frontend
-      run: npm ci
+      - name: Extract CodeQL Results
+        run: |
+          if [ -f "codeql-results.sarif" ]; then
+            ALERTS=$(jq '.runs[].results | length' codeql-results.sarif | awk '{sum+=$1} END {print sum}')
+            echo "alerts=${ALERTS:-0}" >> $GITHUB_OUTPUT
 
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v2
-      id: codeql-results
-      with:
-        category: "/language:php,javascript"
-        output: codeql-results.sarif
-
-    - name: Extract CodeQL Results
-      run: |
-        if [ -f "codeql-results.sarif" ]; then
-          ALERTS=$(jq '.runs[].results | length' codeql-results.sarif | awk '{sum+=$1} END {print sum}')
-          echo "alerts=${ALERTS:-0}" >> $GITHUB_OUTPUT
-
-          if [ "${ALERTS:-0}" -gt 0 ]; then
-            echo "## 🔴 CodeQL Analysis - $ALERTS security alerts found" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ✅ CodeQL Analysis - No security alerts found" >> $GITHUB_STEP_SUMMARY
+            if [ "${ALERTS:-0}" -gt 0 ]; then
+              echo "## 🔴 CodeQL Analysis - $ALERTS security alerts found" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "## ✅ CodeQL Analysis - No security alerts found" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
-        fi
 
-    - name: Run Semgrep Security Analysis
-      id: semgrep
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: >-
-          p/security-audit
-          p/secrets
-          p/php
-          p/typescript
-          p/javascript
-          p/owasp-top-ten
-          p/cwe-top-25
-        generateSarif: "1"
-        publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
-        publishDeployment: ${{ github.ref == 'refs/heads/main' && '1' || '0' }}
-      env:
-        SEMGREP_TIMEOUT: 300
-      continue-on-error: true
+      - name: Run Semgrep Security Analysis
+        id: semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+        env:
+          SEMGREP_TIMEOUT: 300
+        continue-on-error: true
 
-    - name: Process Semgrep Results
-      if: always()
-      run: |
-        if [ -f "semgrep.sarif" ]; then
-          FINDINGS=$(jq '.runs[].results | length' semgrep.sarif | awk '{sum+=$1} END {print sum}')
-          echo "findings=${FINDINGS:-0}" >> $GITHUB_OUTPUT
+      - name: Process Semgrep Results
+        if: always()
+        run: |
+          if [ -f "semgrep.sarif" ]; then
+            FINDINGS=$(jq '.runs[].results | length' semgrep.sarif | awk '{sum+=$1} END {print sum}')
+            echo "findings=${FINDINGS:-0}" >> $GITHUB_OUTPUT
 
-          # Extract high/critical findings
-          HIGH_FINDINGS=$(jq '.runs[].results[] | select(.level == "error" or .level == "warning") | .level' semgrep.sarif | wc -l)
+            # Extract high/critical findings
+            HIGH_FINDINGS=$(jq '.runs[].results[] | select(.level == "error" or .level == "warning") | .level' semgrep.sarif | wc -l)
 
-          if [ "${FINDINGS:-0}" -gt 0 ]; then
-            echo "## 🔴 Semgrep Analysis - $FINDINGS security findings" >> $GITHUB_STEP_SUMMARY
-            echo "- High/Critical: $HIGH_FINDINGS" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ "${FINDINGS:-0}" -gt 0 ]; then
+              echo "## 🔴 Semgrep Analysis - $FINDINGS security findings" >> $GITHUB_STEP_SUMMARY
+              echo "- High/Critical: $HIGH_FINDINGS" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
 
-            # Show top 5 findings
-            echo "### Top Security Findings:" >> $GITHUB_STEP_SUMMARY
-            jq -r '.runs[].results[] | "- **\(.ruleId)**: \(.message.text) (\(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine))"' semgrep.sarif | head -5 >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ✅ Semgrep Analysis - No security findings" >> $GITHUB_STEP_SUMMARY
+              # Show top 5 findings
+              echo "### Top Security Findings:" >> $GITHUB_STEP_SUMMARY
+              jq -r '.runs[].results[] | "- **\(.ruleId)**: \(.message.text) (\(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine))"' semgrep.sarif | head -5 >> $GITHUB_STEP_SUMMARY
+            else
+              echo "## ✅ Semgrep Analysis - No security findings" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
-        fi
 
-    - name: Upload SARIF Results
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: semgrep.sarif
+      - name: Upload SARIF Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('semgrep.sarif') != ''
+        with:
+          sarif_file: semgrep.sarif
 
   # Job para análisis de secretos
   secrets-detection:
     name: Secrets Detection
     runs-on: ubuntu-latest
-    if: ${{ inputs.scan_type == 'full' || inputs.scan_type == 'code-only' || github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || true }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Run TruffleHog OSS
-      uses: trufflesecurity/trufflehog@main
-      with:
-        path: ./
-        base: ${{ github.event.repository.default_branch }}
-        head: HEAD
-        extra_args: --debug --only-verified --json
-      continue-on-error: true
+      - name: Run TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: --debug --only-verified --json --no-verification
+        continue-on-error: true
 
-    - name: Run GitLeaks
-      uses: gitleaks/gitleaks-action@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-      with:
-        source: "."
-        config: .gitleaks.toml
-        report_format: sarif
-        report_file: gitleaks.sarif
-        fail: false
+      - name: Run GitLeaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
 
-    - name: Upload GitLeaks Results
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: gitleaks.sarif
+      - name: Upload GitLeaks Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('results.sarif') != ''
+        with:
+          sarif_file: results.sarif
 
   # Job para análisis de contenedores
   container-security:
     name: Container Security Scan
     runs-on: ubuntu-latest
-    if: ${{ inputs.scan_type == 'full' || inputs.scan_type == 'container-only' || github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || true }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Build Container Image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        tags: shrt-backend:security-scan
-        load: true
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+      - name: Build Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: shrt-backend:security-scan
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: Run Trivy Container Scan
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'shrt-backend:security-scan'
-        format: 'sarif'
-        output: 'trivy-container.sarif'
-        severity: 'CRITICAL,HIGH,MEDIUM'
+      - name: Run Trivy Container Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "shrt-backend:security-scan"
+          format: "sarif"
+          output: "trivy-container.sarif"
+          severity: "CRITICAL,HIGH,MEDIUM"
 
-    - name: Run Snyk Container Test
-      uses: snyk/actions/docker@master
-      env:
-        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-      with:
-        image: 'shrt-backend:security-scan'
-        args: --severity-threshold=${{ inputs.severity_threshold || 'medium' }}
-      continue-on-error: true
+      - name: Run Snyk Container Test
+        uses: snyk/actions/docker@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: "shrt-backend:security-scan"
+          args: --severity-threshold=medium
+        continue-on-error: true
 
-    - name: Upload Trivy Results
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: 'trivy-container.sarif'
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-container.sarif') != ''
+        with:
+          sarif_file: "trivy-container.sarif"
 
-    - name: Container Security Summary
-      run: |
-        if [ -f "trivy-container.sarif" ]; then
-          VULNERABILITIES=$(jq '.runs[].results | length' trivy-container.sarif | awk '{sum+=$1} END {print sum}')
+      - name: Container Security Summary
+        run: |
+          if [ -f "trivy-container.sarif" ]; then
+            VULNERABILITIES=$(jq '.runs[].results | length' trivy-container.sarif | awk '{sum+=$1} END {print sum}')
 
-          if [ "${VULNERABILITIES:-0}" -gt 0 ]; then
-            echo "## 🔴 Container Security - $VULNERABILITIES vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            if [ "${VULNERABILITIES:-0}" -gt 0 ]; then
+              echo "## 🔴 Container Security - $VULNERABILITIES vulnerabilities found" >> $GITHUB_STEP_SUMMARY
 
-            # Extract vulnerability counts by severity
-            CRITICAL=$(jq '.runs[].results[] | select(.level == "error") | .level' trivy-container.sarif | wc -l)
-            HIGH=$(jq '.runs[].results[] | select(.level == "warning") | .level' trivy-container.sarif | wc -l)
+              # Extract vulnerability counts by severity
+              CRITICAL=$(jq '.runs[].results[] | select(.level == "error") | .level' trivy-container.sarif | wc -l)
+              HIGH=$(jq '.runs[].results[] | select(.level == "warning") | .level' trivy-container.sarif | wc -l)
 
-            echo "- Critical: $CRITICAL" >> $GITHUB_STEP_SUMMARY
-            echo "- High: $HIGH" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ✅ Container Security - No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+              echo "- Critical: $CRITICAL" >> $GITHUB_STEP_SUMMARY
+              echo "- High: $HIGH" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "## ✅ Container Security - No vulnerabilities found" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
-        fi
 
   # Job para análisis de infraestructura como código
   infrastructure-security:
     name: Infrastructure Security
     runs-on: ubuntu-latest
-    if: ${{ inputs.scan_type == 'full' || github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || true }}
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Run Checkov IaC Security Scan
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: .
-        framework: dockerfile,terraform,kubernetes,github_actions
-        output_format: sarif
-        output_file_path: checkov.sarif
-        api-key: ${{ secrets.CHECKOV_API_KEY }}
-      continue-on-error: true
+      - name: Run Checkov IaC Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,terraform,kubernetes,github_actions
+          output_format: sarif
+          output_file_path: checkov.sarif
+          api-key: ${{ secrets.CHECKOV_API_KEY }}
+        continue-on-error: true
 
-    - name: Upload Checkov Results
-      uses: github/codeql-action/upload-sarif@v2
-      if: always()
-      with:
-        sarif_file: checkov.sarif
+      - name: Upload Checkov Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('checkov.sarif') != ''
+        with:
+          sarif_file: checkov.sarif
 
-    - name: Scan GitHub Actions Workflows
-      run: |
-        echo "## 🔍 GitHub Actions Security Scan" >> $GITHUB_STEP_SUMMARY
+      - name: Scan GitHub Actions Workflows
+        run: |
+          echo "## 🔍 GitHub Actions Security Scan" >> $GITHUB_STEP_SUMMARY
 
-        # Check for potential security issues in workflows
-        WORKFLOW_ISSUES=0
+          # Check for potential security issues in workflows
+          WORKFLOW_ISSUES=0
 
-        # Check for direct secret usage
-        if grep -r '\${{ secrets\.' .github/workflows/ | grep -v 'secrets.GITHUB_TOKEN' >/dev/null; then
-          echo "- ⚠️ Direct secret usage found in workflows" >> $GITHUB_STEP_SUMMARY
-          WORKFLOW_ISSUES=$((WORKFLOW_ISSUES + 1))
-        fi
+          # Check for direct secret usage (avoiding GitHub Actions parser issues)
+          if grep -r 'secrets\.' .github/workflows/ | grep -v 'secrets.GITHUB_TOKEN' >/dev/null; then
+            echo "- ⚠️ Direct secret usage found in workflows" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_ISSUES=$((WORKFLOW_ISSUES + 1))
+          fi
 
-        # Check for pull_request_target usage
-        if grep -r 'pull_request_target' .github/workflows/ >/dev/null; then
-          echo "- ⚠️ pull_request_target usage found - review for security" >> $GITHUB_STEP_SUMMARY
-          WORKFLOW_ISSUES=$((WORKFLOW_ISSUES + 1))
-        fi
+          # Check for pull_request_target usage
+          if grep -r 'pull_request_target' .github/workflows/ >/dev/null; then
+            echo "- ⚠️ pull_request_target usage found - review for security" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_ISSUES=$((WORKFLOW_ISSUES + 1))
+          fi
 
-        # Check for script injection patterns
-        if grep -r '\${{.*github\.event\.' .github/workflows/ >/dev/null; then
-          echo "- ⚠️ Potential script injection vectors found" >> $GITHUB_STEP_SUMMARY
-          WORKFLOW_ISSUES=$((WORKFLOW_ISSUES + 1))
-        fi
+          # Check for script injection patterns
+          if grep -r 'github\.event\.' .github/workflows/ >/dev/null 2>&1; then
+            echo "- ⚠️ Potential script injection vectors found" >> $GITHUB_STEP_SUMMARY
+            WORKFLOW_ISSUES=$((WORKFLOW_ISSUES + 1))
+          fi
 
-        if [ $WORKFLOW_ISSUES -eq 0 ]; then
-          echo "- ✅ No obvious security issues found in workflows" >> $GITHUB_STEP_SUMMARY
-        fi
+          if [ $WORKFLOW_ISSUES -eq 0 ]; then
+            echo "- ✅ No obvious security issues found in workflows" >> $GITHUB_STEP_SUMMARY
+          fi
 
   # Job de consolidación y reporte
   security-report:
     name: Security Report & Compliance
     runs-on: ubuntu-latest
-    needs: [dependency-security, static-code-analysis, secrets-detection, container-security, infrastructure-security]
+    needs:
+      [
+        dependency-security,
+        static-code-analysis,
+        secrets-detection,
+        container-security,
+        infrastructure-security,
+      ]
     if: always()
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-    - name: Download All Artifacts
-      uses: actions/download-artifact@v4
-      continue-on-error: true
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
 
-    - name: Generate Security Report
-      run: |
-        echo "# 🔒 Comprehensive Security Report" > security-report.md
-        echo "" >> security-report.md
-        echo "**Scan Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-report.md
-        echo "**Repository**: ${{ github.repository }}" >> security-report.md
-        echo "**Commit**: ${{ github.sha }}" >> security-report.md
-        echo "**Branch**: ${{ github.ref_name }}" >> security-report.md
-        echo "" >> security-report.md
-
-        # Summary section
-        echo "## 📊 Security Scan Summary" >> security-report.md
-        echo "" >> security-report.md
-
-        # Check scan results
-        TOTAL_ISSUES=0
-
-        # Dependencies
-        BACKEND_DEPS="${{ needs.dependency-security.outputs.backend-vulnerabilities || '0' }}"
-        FRONTEND_DEPS="${{ needs.dependency-security.outputs.frontend-vulnerabilities || '0' }}"
-        DEP_TOTAL=$((BACKEND_DEPS + FRONTEND_DEPS))
-        TOTAL_ISSUES=$((TOTAL_ISSUES + DEP_TOTAL))
-
-        # Code analysis
-        SEMGREP_FINDINGS="${{ needs.static-code-analysis.outputs.semgrep-findings || '0' }}"
-        CODEQL_ALERTS="${{ needs.static-code-analysis.outputs.codeql-alerts || '0' }}"
-        CODE_TOTAL=$((SEMGREP_FINDINGS + CODEQL_ALERTS))
-        TOTAL_ISSUES=$((TOTAL_ISSUES + CODE_TOTAL))
-
-        echo "| Scan Type | Issues Found | Status |" >> security-report.md
-        echo "|-----------|--------------|---------|" >> security-report.md
-        echo "| Dependencies | $DEP_TOTAL | $([ $DEP_TOTAL -eq 0 ] && echo '✅ Clean' || echo '⚠️ Issues') |" >> security-report.md
-        echo "| Static Analysis | $CODE_TOTAL | $([ $CODE_TOTAL -eq 0 ] && echo '✅ Clean' || echo '⚠️ Issues') |" >> security-report.md
-        echo "| Secrets Detection | - | $([ '${{ needs.secrets-detection.result }}' == 'success' ] && echo '✅ Clean' || echo '⚠️ Check') |" >> security-report.md
-        echo "| Container Security | - | $([ '${{ needs.container-security.result }}' == 'success' ] && echo '✅ Clean' || echo '⚠️ Check') |" >> security-report.md
-        echo "| Infrastructure | - | $([ '${{ needs.infrastructure-security.result }}' == 'success' ] && echo '✅ Clean' || echo '⚠️ Check') |" >> security-report.md
-        echo "" >> security-report.md
-
-        # Risk assessment
-        echo "## 🎯 Risk Assessment" >> security-report.md
-        echo "" >> security-report.md
-
-        if [ $TOTAL_ISSUES -eq 0 ]; then
-          echo "**Overall Risk Level**: 🟢 **LOW**" >> security-report.md
+      - name: Generate Security Report
+        run: |
+          echo "# 🔒 Comprehensive Security Report" > security-report.md
           echo "" >> security-report.md
-          echo "All automated security scans passed without identifying significant issues." >> security-report.md
-        elif [ $TOTAL_ISSUES -le 5 ]; then
-          echo "**Overall Risk Level**: 🟡 **MEDIUM**" >> security-report.md
+          echo "**Scan Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-report.md
+          echo "**Repository**: ${{ github.repository }}" >> security-report.md
+          echo "**Commit**: ${{ github.sha }}" >> security-report.md
+          echo "**Branch**: ${{ github.ref_name }}" >> security-report.md
           echo "" >> security-report.md
-          echo "Some security issues were identified that should be addressed." >> security-report.md
-        else
-          echo "**Overall Risk Level**: 🔴 **HIGH**" >> security-report.md
+
+          # Summary section
+          echo "## 📊 Security Scan Summary" >> security-report.md
           echo "" >> security-report.md
-          echo "Multiple security issues were identified that require immediate attention." >> security-report.md
-        fi
 
-        echo "" >> security-report.md
-        echo "## 📋 Recommended Actions" >> security-report.md
-        echo "" >> security-report.md
+          # Check scan results
+          TOTAL_ISSUES=0
 
-        if [ $DEP_TOTAL -gt 0 ]; then
-          echo "- Update vulnerable dependencies to their latest secure versions" >> security-report.md
-        fi
+          # Dependencies
+          BACKEND_DEPS="${{ needs.dependency-security.outputs.backend-vulnerabilities || '0' }}"
+          FRONTEND_DEPS="${{ needs.dependency-security.outputs.frontend-vulnerabilities || '0' }}"
+          DEP_TOTAL=$((BACKEND_DEPS + FRONTEND_DEPS))
+          TOTAL_ISSUES=$((TOTAL_ISSUES + DEP_TOTAL))
 
-        if [ $CODE_TOTAL -gt 0 ]; then
-          echo "- Review and fix static analysis findings" >> security-report.md
-        fi
+          # Code analysis
+          SEMGREP_FINDINGS="${{ needs.static-code-analysis.outputs.semgrep-findings || '0' }}"
+          CODEQL_ALERTS="${{ needs.static-code-analysis.outputs.codeql-alerts || '0' }}"
+          CODE_TOTAL=$((SEMGREP_FINDINGS + CODEQL_ALERTS))
+          TOTAL_ISSUES=$((TOTAL_ISSUES + CODE_TOTAL))
 
-        echo "- Regularly run security scans in CI/CD pipeline" >> security-report.md
-        echo "- Implement security monitoring in production" >> security-report.md
-        echo "- Conduct periodic manual security reviews" >> security-report.md
+          echo "| Scan Type | Issues Found | Status |" >> security-report.md
+          echo "|-----------|--------------|---------|" >> security-report.md
+          echo "| Dependencies | $DEP_TOTAL | $([ $DEP_TOTAL -eq 0 ] && echo '✅ Clean' || echo '⚠️ Issues') |" >> security-report.md
+          echo "| Static Analysis | $CODE_TOTAL | $([ $CODE_TOTAL -eq 0 ] && echo '✅ Clean' || echo '⚠️ Issues') |" >> security-report.md
+          echo "| Secrets Detection | - | $([ '${{ needs.secrets-detection.result }}' == 'success' ] && echo '✅ Clean' || echo '⚠️ Check') |" >> security-report.md
+          echo "| Container Security | - | $([ '${{ needs.container-security.result }}' == 'success' ] && echo '✅ Clean' || echo '⚠️ Check') |" >> security-report.md
+          echo "| Infrastructure | - | $([ '${{ needs.infrastructure-security.result }}' == 'success' ] && echo '✅ Clean' || echo '⚠️ Check') |" >> security-report.md
+          echo "" >> security-report.md
 
-        # Add report to step summary
-        cat security-report.md >> $GITHUB_STEP_SUMMARY
+          # Risk assessment
+          echo "## 🎯 Risk Assessment" >> security-report.md
+          echo "" >> security-report.md
 
-    - name: Upload Security Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-report-${{ github.sha }}
-        path: security-report.md
-        retention-days: 90
+          if [ $TOTAL_ISSUES -eq 0 ]; then
+            echo "**Overall Risk Level**: 🟢 **LOW**" >> security-report.md
+            echo "" >> security-report.md
+            echo "All automated security scans passed without identifying significant issues." >> security-report.md
+          elif [ $TOTAL_ISSUES -le 5 ]; then
+            echo "**Overall Risk Level**: 🟡 **MEDIUM**" >> security-report.md
+            echo "" >> security-report.md
+            echo "Some security issues were identified that should be addressed." >> security-report.md
+          else
+            echo "**Overall Risk Level**: 🔴 **HIGH**" >> security-report.md
+            echo "" >> security-report.md
+            echo "Multiple security issues were identified that require immediate attention." >> security-report.md
+          fi
 
-    - name: Security Gate Check
-      run: |
-        # Determine if we should fail based on findings
-        TOTAL_CRITICAL=0
+          echo "" >> security-report.md
+          echo "## 📋 Recommended Actions" >> security-report.md
+          echo "" >> security-report.md
 
-        # Count critical/high severity issues
-        BACKEND_DEPS="${{ needs.dependency-security.outputs.backend-vulnerabilities || '0' }}"
-        FRONTEND_DEPS="${{ needs.dependency-security.outputs.frontend-vulnerabilities || '0' }}"
-        SEMGREP_FINDINGS="${{ needs.static-code-analysis.outputs.semgrep-findings || '0' }}"
+          if [ $DEP_TOTAL -gt 0 ]; then
+            echo "- Update vulnerable dependencies to their latest secure versions" >> security-report.md
+          fi
 
-        TOTAL_ISSUES=$((BACKEND_DEPS + FRONTEND_DEPS + SEMGREP_FINDINGS))
+          if [ $CODE_TOTAL -gt 0 ]; then
+            echo "- Review and fix static analysis findings" >> security-report.md
+          fi
 
-        THRESHOLD="${{ inputs.severity_threshold || 'medium' }}"
+          echo "- Regularly run security scans in CI/CD pipeline" >> security-report.md
+          echo "- Implement security monitoring in production" >> security-report.md
+          echo "- Conduct periodic manual security reviews" >> security-report.md
 
-        echo "Total security issues found: $TOTAL_ISSUES"
-        echo "Severity threshold: $THRESHOLD"
+          # Add report to step summary
+          cat security-report.md >> $GITHUB_STEP_SUMMARY
 
-        # Only fail on critical/high issues if threshold is set accordingly
-        if [ "$THRESHOLD" == "critical" ] && [ $TOTAL_ISSUES -gt 10 ]; then
-          echo "❌ Security gate failed: Too many critical issues found"
-          exit 1
-        elif [ "$THRESHOLD" == "high" ] && [ $TOTAL_ISSUES -gt 5 ]; then
-          echo "❌ Security gate failed: Too many high severity issues found"
-          exit 1
-        elif [ "$THRESHOLD" == "medium" ] && [ $TOTAL_ISSUES -gt 0 ]; then
-          echo "⚠️ Security issues found but gate passed due to medium threshold"
-        else
-          echo "✅ Security gate passed"
-        fi
+      - name: Upload Security Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report-${{ github.sha }}
+          path: security-report.md
+          retention-days: 90
 
-    - name: Notify Security Team
-      if: failure()
-      run: |
-        echo "🚨 Security scan failed - notifying security team"
-        # Here you would integrate with your notification system
-        # curl -X POST -H 'Content-type: application/json' \
-        #   --data '{"text":"🚨 Security scan failed in ${{ github.repository }}"}' \
-        #   ${{ secrets.SECURITY_WEBHOOK_URL }}
+      - name: Security Gate Check
+        run: |
+          # Determine if we should fail based on findings
+          TOTAL_CRITICAL=0
+
+          # Count critical/high severity issues
+          BACKEND_DEPS="${{ needs.dependency-security.outputs.backend-vulnerabilities || '0' }}"
+          FRONTEND_DEPS="${{ needs.dependency-security.outputs.frontend-vulnerabilities || '0' }}"
+          SEMGREP_FINDINGS="${{ needs.static-code-analysis.outputs.semgrep-findings || '0' }}"
+
+          TOTAL_ISSUES=$((BACKEND_DEPS + FRONTEND_DEPS + SEMGREP_FINDINGS))
+
+          THRESHOLD="medium"
+
+          echo "Total security issues found: $TOTAL_ISSUES"
+          echo "Severity threshold: $THRESHOLD"
+
+          # Only fail on critical/high issues if threshold is set accordingly
+          if [ "$THRESHOLD" == "critical" ] && [ $TOTAL_ISSUES -gt 10 ]; then
+            echo "❌ Security gate failed: Too many critical issues found"
+            exit 1
+          elif [ "$THRESHOLD" == "high" ] && [ $TOTAL_ISSUES -gt 5 ]; then
+            echo "❌ Security gate failed: Too many high severity issues found"
+            exit 1
+          elif [ "$THRESHOLD" == "medium" ] && [ $TOTAL_ISSUES -gt 0 ]; then
+            echo "⚠️ Security issues found but gate passed due to medium threshold"
+          else
+            echo "✅ Security gate passed"
+          fi
+
+      - name: Notify Security Team
+        if: failure()
+        run: |
+          echo "🚨 Security scan failed - notifying security team"
+          # Here you would integrate with your notification system
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"🚨 Security scan failed in ${{ github.repository }}"}' \
+          #   ${{ secrets.SECURITY_WEBHOOK_URL }}

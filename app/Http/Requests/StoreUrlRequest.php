@@ -23,7 +23,7 @@ class StoreUrlRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'url' => ['required', 'string', 'max:2048', new ValidRfc1738Url()],
+            'url' => ['required', 'string', 'max:2048', new ValidRfc1738Url],
         ];
     }
 

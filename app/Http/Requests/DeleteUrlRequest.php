@@ -12,13 +12,13 @@ class DeleteUrlRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        if (!$this->hasHeader('X-Device-ID')) {
+        if (! $this->hasHeader('X-Device-ID')) {
             return false;
         }
 
-        $url = Url::find($this->route('id'));
+        $url = Url::find($this->route('url'));
 
-        if (!$url) {
+        if (! $url) {
             return false;
         }
 
@@ -40,13 +40,13 @@ class DeleteUrlRequest extends FormRequest
      */
     protected function failedAuthorization(): void
     {
-        $url = Url::find($this->route('id'));
+        $url = Url::find($this->route('url'));
 
-        if (!$this->hasHeader('X-Device-ID')) {
+        if (! $this->hasHeader('X-Device-ID')) {
             abort(response()->json(['error' => 'Device ID required'], 400));
         }
 
-        if (!$url) {
+        if (! $url) {
             abort(response()->json(['error' => 'URL not found'], 404));
         }
 
@@ -66,6 +66,12 @@ class DeleteUrlRequest extends FormRequest
      */
     public function getUrl(): ?Url
     {
-        return Url::find($this->route('id'));
+        if (! isset($this->url)) {
+            $this->url = Url::find($this->route('url'));
+        }
+
+        return $this->url;
     }
+
+    protected ?Url $url = null;
 }

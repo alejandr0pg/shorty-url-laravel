@@ -15,7 +15,7 @@ class ValidRfc1738Url implements ValidationRule
 
     public function __construct()
     {
-        $this->validator = new UrlValidatorService();
+        $this->validator = new UrlValidatorService;
     }
 
     /**
@@ -23,14 +23,15 @@ class ValidRfc1738Url implements ValidationRule
      */
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             $fail('The :attribute must be a valid URL string.');
+
             return;
         }
 
         $result = $this->validator->validateUrl($value);
 
-        if (!$result['valid']) {
+        if (! $result['valid']) {
             $errors = implode('. ', $result['errors']);
             $fail("The :attribute is not a valid RFC 1738 compliant URL. {$errors}");
         }

@@ -22,21 +22,23 @@ class ValidUrlScheme implements ValidationRule
      */
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             $fail('The :attribute must be a valid URL string.');
+
             return;
         }
 
         $parsedUrl = parse_url($value);
 
-        if (!isset($parsedUrl['scheme'])) {
+        if (! isset($parsedUrl['scheme'])) {
             $fail('The :attribute must include a valid scheme (http/https).');
+
             return;
         }
 
         $scheme = strtolower($parsedUrl['scheme']);
 
-        if (!in_array($scheme, $this->allowedSchemes)) {
+        if (! in_array($scheme, $this->allowedSchemes)) {
             $allowedList = implode(', ', $this->allowedSchemes);
             $fail("The :attribute must use one of the following schemes: {$allowedList}.");
         }

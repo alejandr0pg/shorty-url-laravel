@@ -11,7 +11,9 @@ use Symfony\Component\HttpFoundation\Response;
 class DetectSuspiciousActivity
 {
     private const RATE_LIMIT_WINDOW = 300; // 5 minutes
+
     private const SUSPICIOUS_REQUEST_THRESHOLD = 50; // requests per window
+
     private const HIGH_FREQUENCY_THRESHOLD = 20; // requests per minute
 
     /**
@@ -19,7 +21,7 @@ class DetectSuspiciousActivity
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $loggingService = new LoggingService();
+        $loggingService = new LoggingService;
         $deviceId = $request->header('X-Device-ID');
         $ip = $request->ip();
 
@@ -43,7 +45,7 @@ class DetectSuspiciousActivity
         $now = time();
 
         // Clean old requests (older than 1 minute)
-        $requests = array_filter($requests, fn($timestamp) => $now - $timestamp < 60);
+        $requests = array_filter($requests, fn ($timestamp) => $now - $timestamp < 60);
 
         if (count($requests) > self::HIGH_FREQUENCY_THRESHOLD) {
             $loggingService->logHighFrequencyActivity($deviceId, count($requests), 60);
@@ -71,7 +73,7 @@ class DetectSuspiciousActivity
                 '<script' => 'Script tag in URL',
                 'eval(' => 'JavaScript eval detected',
                 'document.cookie' => 'Cookie access attempt',
-                'localStorage' => 'LocalStorage access attempt'
+                'localStorage' => 'LocalStorage access attempt',
             ];
 
             foreach ($suspiciousPatterns as $pattern => $reason) {
@@ -111,10 +113,10 @@ class DetectSuspiciousActivity
 
             // Log if suspicious rate detected
             if ($deviceRequests > self::SUSPICIOUS_REQUEST_THRESHOLD) {
-                $loggingService = new LoggingService();
+                $loggingService = new LoggingService;
                 $loggingService->logDeviceIdIssue($deviceId, 'High request rate detected', [
                     'request_count' => $deviceRequests,
-                    'time_window' => self::RATE_LIMIT_WINDOW
+                    'time_window' => self::RATE_LIMIT_WINDOW,
                 ]);
             }
         }

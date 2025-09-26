@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Url;
-use App\Services\UrlValidatorService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -21,7 +20,7 @@ describe('RFC 1738 URL Validation', function () {
             'https://192.168.1.1:8080',
             'https://example.com/path?query=value',
             'https://example.com/path#fragment',
-            'https://example.com/path?query=value#fragment'
+            'https://example.com/path?query=value#fragment',
         ];
 
         foreach ($validUrls as $url) {
@@ -44,7 +43,7 @@ describe('RFC 1738 URL Validation', function () {
             'mailto:test@example.com',
             'tel:+1234567890',
             'ssh://example.com',
-            'git://example.com'
+            'git://example.com',
         ];
 
         foreach ($invalidSchemes as $url) {
@@ -95,7 +94,7 @@ describe('RFC 1738 URL Validation', function () {
             'http://example.com:abc',
             'http://example.com:80a',
             'http://example.com:',
-            'http://example.com::80'
+            'http://example.com::80',
         ];
 
         foreach ($invalidPorts as $url) {
@@ -117,7 +116,7 @@ describe('RFC 1738 URL Validation', function () {
             'https://example.com/path|with|pipes',
             'https://example.com/path\\with\\backslashes',
             'https://example.com/path^with^carets',
-            'https://example.com/path`with`backticks'
+            'https://example.com/path`with`backticks',
         ];
 
         foreach ($pathsWithUnsafeChars as $url) {
@@ -127,7 +126,7 @@ describe('RFC 1738 URL Validation', function () {
             );
 
             $response->assertStatus(201, "Should sanitize and accept URL: {$url}")
-                     ->assertJson(['sanitized' => true]);
+                ->assertJson(['sanitized' => true]);
         }
     });
 
@@ -135,24 +134,24 @@ describe('RFC 1738 URL Validation', function () {
         $normalizationTests = [
             [
                 'input' => 'HTTP://EXAMPLE.COM/PATH',
-                'expected' => 'http://example.com/PATH'
+                'expected' => 'http://example.com/PATH',
             ],
             [
                 'input' => 'https://EXAMPLE.COM:443/path',
-                'expected' => 'https://example.com/path'
+                'expected' => 'https://example.com/path',
             ],
             [
                 'input' => 'http://example.com:80/path',
-                'expected' => 'http://example.com/path'
+                'expected' => 'http://example.com/path',
             ],
             [
                 'input' => 'https://example.com/path//double//slashes',
-                'expected' => 'https://example.com/path/double/slashes'
+                'expected' => 'https://example.com/path/double/slashes',
             ],
             [
                 'input' => 'https://example.com/path/',
-                'expected' => 'https://example.com/path'
-            ]
+                'expected' => 'https://example.com/path',
+            ],
         ];
 
         foreach ($normalizationTests as $test) {
@@ -162,16 +161,16 @@ describe('RFC 1738 URL Validation', function () {
             );
 
             $response->assertStatus(201)
-                     ->assertJson([
-                         'original_url' => $test['expected'],
-                         'normalized' => true
-                     ]);
+                ->assertJson([
+                    'original_url' => $test['expected'],
+                    'normalized' => true,
+                ]);
         }
     });
 
     test('handles edge case url lengths', function () {
         // Test safely under the limit
-        $urlUnder2048 = 'https://example.com/' . str_repeat('a', 1900); // Well under 2048
+        $urlUnder2048 = 'https://example.com/'.str_repeat('a', 1900); // Well under 2048
 
         $response = $this->postJson('/api/urls',
             ['url' => $urlUnder2048],
@@ -181,7 +180,7 @@ describe('RFC 1738 URL Validation', function () {
         $response->assertStatus(201);
 
         // Test over the limit
-        $urlOver2048 = 'https://example.com/' . str_repeat('a', 2100); // Clearly over 2048
+        $urlOver2048 = 'https://example.com/'.str_repeat('a', 2100); // Clearly over 2048
 
         $response = $this->postJson('/api/urls',
             ['url' => $urlOver2048],
@@ -200,7 +199,7 @@ describe('RFC 1738 URL Validation', function () {
             'http://127.0.0.1:8080',
             'https://172.16.0.1/path',
             'http://8.8.8.8',
-            'https://1.1.1.1'
+            'https://1.1.1.1',
         ];
 
         foreach ($validIPs as $url) {
@@ -241,7 +240,7 @@ describe('RFC 1738 URL Validation', function () {
             'https://example.com/path?query=value with spaces',
             'https://example.com/path?query=value#fragment with spaces',
             'https://example.com?empty=',
-            'https://example.com?key1=value1&key2=value2&key3=value3'
+            'https://example.com?key1=value1&key2=value2&key3=value3',
         ];
 
         foreach ($urlsWithQueryAndFragment as $url) {
@@ -264,7 +263,7 @@ describe('RFC 1738 URL Validation', function () {
             'https://example.com/path%20with%20encoded%20spaces',
             'https://example.com/path?query=value%20encoded',
             'https://example.com/path%2Fwith%2Fencoded%2Fslashes',
-            'https://example.com/%C3%A9ncoded-unicode'
+            'https://example.com/%C3%A9ncoded-unicode',
         ];
 
         foreach ($urlsWithEncoding as $url) {
@@ -286,24 +285,24 @@ describe('RFC 1738 Sanitization Process', function () {
         );
 
         $response->assertStatus(201)
-                 ->assertJsonPath('original_url', 'https://example.com/path')
-                 ->assertJson(['sanitized' => true]);
+            ->assertJsonPath('original_url', 'https://example.com/path')
+            ->assertJson(['sanitized' => true]);
     });
 
     test('sanitization encodes unsafe characters properly', function () {
         $testCases = [
             [
                 'input' => 'https://example.com/path with spaces',
-                'should_sanitize' => true
+                'should_sanitize' => true,
             ],
             [
                 'input' => 'https://example.com/path"with"quotes',
-                'should_sanitize' => true
+                'should_sanitize' => true,
             ],
             [
                 'input' => 'https://example.com/normal-path-123',
-                'should_sanitize' => false
-            ]
+                'should_sanitize' => false,
+            ],
         ];
 
         foreach ($testCases as $testCase) {
@@ -313,7 +312,7 @@ describe('RFC 1738 Sanitization Process', function () {
             );
 
             $response->assertStatus(201)
-                     ->assertJson(['sanitized' => $testCase['should_sanitize']]);
+                ->assertJson(['sanitized' => $testCase['should_sanitize']]);
         }
     });
 

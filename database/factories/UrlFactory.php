@@ -19,7 +19,7 @@ class UrlFactory extends Factory
         return [
             'original_url' => $this->faker->url(),
             'short_code' => \App\Models\Url::generateShortCode(),
-            'device_id' => 'device_' . $this->faker->uuid(),
+            'device_id' => 'device_'.$this->faker->uuid(),
             'clicks' => 0,
         ];
     }

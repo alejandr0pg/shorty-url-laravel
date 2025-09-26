@@ -3,7 +3,7 @@
 
 
 <aside>
-    <strong>Base URL</strong>: <code>http://localhost:8000</code>
+    <strong>Base URL</strong>: <code>http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com</code>
 </aside>
 
     This documentation aims to provide all the information you need to work with our API.

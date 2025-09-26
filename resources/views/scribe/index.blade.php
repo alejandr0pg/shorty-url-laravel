@@ -26,7 +26,7 @@
             </style>
 
     <script>
-        var tryItOutBaseUrl = "http://localhost:8000";
+        var tryItOutBaseUrl = "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com";
         var useCsrf = Boolean();
         var csrfUrl = "/sanctum/csrf-cookie";
     </script>
@@ -72,19 +72,22 @@
                 </li>
                                     <ul id="tocify-subheader-endpoints" class="tocify-subheader">
                                                     <li class="tocify-item level-2" data-unique="endpoints-GETapi-urls">
-                                <a href="#endpoints-GETapi-urls">List URLs for the current device</a>
+                                <a href="#endpoints-GETapi-urls">GET api/urls</a>
                             </li>
                                                                                 <li class="tocify-item level-2" data-unique="endpoints-POSTapi-urls">
-                                <a href="#endpoints-POSTapi-urls">Create a shortened URL</a>
+                                <a href="#endpoints-POSTapi-urls">POST api/urls</a>
                             </li>
                                                                                 <li class="tocify-item level-2" data-unique="endpoints-GETapi-urls--id-">
-                                <a href="#endpoints-GETapi-urls--id-">Redirect to the original URL</a>
+                                <a href="#endpoints-GETapi-urls--id-">GET api/urls/{id}</a>
                             </li>
                                                                                 <li class="tocify-item level-2" data-unique="endpoints-PUTapi-urls--id-">
-                                <a href="#endpoints-PUTapi-urls--id-">Update the specified resource in storage.</a>
+                                <a href="#endpoints-PUTapi-urls--id-">PUT api/urls/{id}</a>
                             </li>
                                                                                 <li class="tocify-item level-2" data-unique="endpoints-DELETEapi-urls--id-">
-                                <a href="#endpoints-DELETEapi-urls--id-">Remove the specified resource from storage.</a>
+                                <a href="#endpoints-DELETEapi-urls--id-">DELETE api/urls/{id}</a>
+                            </li>
+                                                                                <li class="tocify-item level-2" data-unique="endpoints-GETapi-resolve--code-">
+                                <a href="#endpoints-GETapi-resolve--code-">GET api/resolve/{code}</a>
                             </li>
                                                                         </ul>
                             </ul>
@@ -106,7 +109,7 @@
     <div class="content">
         <h1 id="introduction">Introduction</h1>
 <aside>
-    <strong>Base URL</strong>: <code>http://localhost:8000</code>
+    <strong>Base URL</strong>: <code>http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com</code>
 </aside>
 <pre><code>This documentation aims to provide all the information you need to work with our API.
 
@@ -120,7 +123,7 @@ You can switch the language used with the tabs at the top right (or from the nav
 
     
 
-                                <h2 id="endpoints-GETapi-urls">List URLs for the current device</h2>
+                                <h2 id="endpoints-GETapi-urls">GET api/urls</h2>
 
 <p>
 </p>
@@ -133,47 +136,59 @@ You can switch the language used with the tabs at the top right (or from the nav
 
 <div class="bash-example">
     <pre><code class="language-bash">curl --request GET \
-    --get "http://localhost:8000/api/urls" \
-    --header "X-Device-ID: string required The device identifier. Example: device_abc123" \
+    --get "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls" \
     --header "Content-Type: application/json" \
-    --header "Accept: application/json"</code></pre></div>
+    --header "Accept: application/json" \
+    --data "{
+    \"search\": \"b\",
+    \"per_page\": 22,
+    \"page\": 67
+}"
+</code></pre></div>
 
 
 <div class="javascript-example">
     <pre><code class="language-javascript">const url = new URL(
-    "http://localhost:8000/api/urls"
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls"
 );
 
 const headers = {
-    "X-Device-ID": "string required The device identifier. Example: device_abc123",
     "Content-Type": "application/json",
     "Accept": "application/json",
+};
+
+let body = {
+    "search": "b",
+    "per_page": 22,
+    "page": 67
 };
 
 fetch(url, {
     method: "GET",
     headers,
+    body: JSON.stringify(body),
 }).then(response =&gt; response.json());</code></pre></div>
 
 </span>
 
 <span id="example-responses-GETapi-urls">
             <blockquote>
-            <p>Example response (200):</p>
+            <p>Example response (400):</p>
         </blockquote>
-                <pre>
+                <details class="annotation">
+            <summary style="cursor: pointer;">
+                <small onclick="textContent = parentElement.parentElement.open ? 'Show headers' : 'Hide headers'">Show headers</small>
+            </summary>
+            <pre><code class="language-http">cache-control: no-cache, private
+content-type: application/json
+x-ratelimit-limit: 60
+x-ratelimit-remaining: 59
+access-control-allow-origin: *
+ </code></pre></details>         <pre>
 
-<code class="language-json" style="max-height: 300px;">[
-    {
-        &quot;id&quot;: 1,
-        &quot;original_url&quot;: &quot;https://example.com&quot;,
-        &quot;short_code&quot;: &quot;abc123&quot;,
-        &quot;device_id&quot;: &quot;device_abc123&quot;,
-        &quot;clicks&quot;: 5,
-        &quot;created_at&quot;: &quot;2023-01-01T00:00:00.000000Z&quot;,
-        &quot;updated_at&quot;: &quot;2023-01-01T00:00:00.000000Z&quot;
-    }
-]</code>
+<code class="language-json" style="max-height: 300px;">{
+    &quot;error&quot;: &quot;Device ID required&quot;
+}</code>
  </pre>
     </span>
 <span id="execution-results-GETapi-urls" hidden>
@@ -224,17 +239,6 @@ You can check the Dev Tools console for debugging information.</code></pre>
         </p>
                 <h4 class="fancy-heading-panel"><b>Headers</b></h4>
                                 <div style="padding-left: 28px; clear: unset;">
-                <b style="line-height: 2;"><code>X-Device-ID</code></b>&nbsp;&nbsp;
-&nbsp;
- &nbsp;
-                <input type="text" style="display: none"
-                              name="X-Device-ID"                data-endpoint="GETapi-urls"
-               value="string required The device identifier. Example: device_abc123"
-               data-component="header">
-    <br>
-<p>Example: <code>string required The device identifier. Example: device_abc123</code></p>
-            </div>
-                                <div style="padding-left: 28px; clear: unset;">
                 <b style="line-height: 2;"><code>Content-Type</code></b>&nbsp;&nbsp;
 &nbsp;
  &nbsp;
@@ -256,9 +260,43 @@ You can check the Dev Tools console for debugging information.</code></pre>
     <br>
 <p>Example: <code>application/json</code></p>
             </div>
-                        </form>
+                                <h4 class="fancy-heading-panel"><b>Body Parameters</b></h4>
+        <div style=" padding-left: 28px;  clear: unset;">
+            <b style="line-height: 2;"><code>search</code></b>&nbsp;&nbsp;
+<small>string</small>&nbsp;
+<i>optional</i> &nbsp;
+                <input type="text" style="display: none"
+                              name="search"                data-endpoint="GETapi-urls"
+               value="b"
+               data-component="body">
+    <br>
+<p>Must not be greater than 255 characters. Example: <code>b</code></p>
+        </div>
+                <div style=" padding-left: 28px;  clear: unset;">
+            <b style="line-height: 2;"><code>per_page</code></b>&nbsp;&nbsp;
+<small>integer</small>&nbsp;
+<i>optional</i> &nbsp;
+                <input type="number" style="display: none"
+               step="any"               name="per_page"                data-endpoint="GETapi-urls"
+               value="22"
+               data-component="body">
+    <br>
+<p>Must be at least 1. Must not be greater than 100. Example: <code>22</code></p>
+        </div>
+                <div style=" padding-left: 28px;  clear: unset;">
+            <b style="line-height: 2;"><code>page</code></b>&nbsp;&nbsp;
+<small>integer</small>&nbsp;
+<i>optional</i> &nbsp;
+                <input type="number" style="display: none"
+               step="any"               name="page"                data-endpoint="GETapi-urls"
+               value="67"
+               data-component="body">
+    <br>
+<p>Must be at least 1. Example: <code>67</code></p>
+        </div>
+        </form>
 
-                    <h2 id="endpoints-POSTapi-urls">Create a shortened URL</h2>
+                    <h2 id="endpoints-POSTapi-urls">POST api/urls</h2>
 
 <p>
 </p>
@@ -271,29 +309,27 @@ You can check the Dev Tools console for debugging information.</code></pre>
 
 <div class="bash-example">
     <pre><code class="language-bash">curl --request POST \
-    "http://localhost:8000/api/urls" \
-    --header "X-Device-ID: string required The device identifier. Example: device_abc123" \
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls" \
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"url\": \"https:\\/\\/example.com\"
+    \"url\": \"http:\\/\\/www.bailey.biz\\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html\"
 }"
 </code></pre></div>
 
 
 <div class="javascript-example">
     <pre><code class="language-javascript">const url = new URL(
-    "http://localhost:8000/api/urls"
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls"
 );
 
 const headers = {
-    "X-Device-ID": "string required The device identifier. Example: device_abc123",
     "Content-Type": "application/json",
     "Accept": "application/json",
 };
 
 let body = {
-    "url": "https:\/\/example.com"
+    "url": "http:\/\/www.bailey.biz\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
 };
 
 fetch(url, {
@@ -305,40 +341,7 @@ fetch(url, {
 </span>
 
 <span id="example-responses-POSTapi-urls">
-            <blockquote>
-            <p>Example response (201):</p>
-        </blockquote>
-                <pre>
-
-<code class="language-json" style="max-height: 300px;">{
-    &quot;short_url&quot;: &quot;http://localhost/abc123&quot;,
-    &quot;original_url&quot;: &quot;https://example.com&quot;,
-    &quot;code&quot;: &quot;abc123&quot;
-}</code>
- </pre>
-            <blockquote>
-            <p>Example response (400):</p>
-        </blockquote>
-                <pre>
-
-<code class="language-json" style="max-height: 300px;">{
-    &quot;error&quot;: &quot;Device ID required&quot;
-}</code>
- </pre>
-            <blockquote>
-            <p>Example response (422):</p>
-        </blockquote>
-                <pre>
-
-<code class="language-json" style="max-height: 300px;">{
-    &quot;errors&quot;: {
-        &quot;url&quot;: [
-            &quot;The url field is required.&quot;
-        ]
-    }
-}</code>
- </pre>
-    </span>
+</span>
 <span id="execution-results-POSTapi-urls" hidden>
     <blockquote>Received response<span
                 id="execution-response-status-POSTapi-urls"></span>:
@@ -387,17 +390,6 @@ You can check the Dev Tools console for debugging information.</code></pre>
         </p>
                 <h4 class="fancy-heading-panel"><b>Headers</b></h4>
                                 <div style="padding-left: 28px; clear: unset;">
-                <b style="line-height: 2;"><code>X-Device-ID</code></b>&nbsp;&nbsp;
-&nbsp;
- &nbsp;
-                <input type="text" style="display: none"
-                              name="X-Device-ID"                data-endpoint="POSTapi-urls"
-               value="string required The device identifier. Example: device_abc123"
-               data-component="header">
-    <br>
-<p>Example: <code>string required The device identifier. Example: device_abc123</code></p>
-            </div>
-                                <div style="padding-left: 28px; clear: unset;">
                 <b style="line-height: 2;"><code>Content-Type</code></b>&nbsp;&nbsp;
 &nbsp;
  &nbsp;
@@ -426,14 +418,14 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="text" style="display: none"
                               name="url"                data-endpoint="POSTapi-urls"
-               value="https://example.com"
+               value="http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
                data-component="body">
     <br>
-<p>The URL to shorten. Must be a valid HTTP/HTTPS URL. Example: <code>https://example.com</code></p>
+<p>Must not be greater than 2048 characters. Example: <code>http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html</code></p>
         </div>
         </form>
 
-                    <h2 id="endpoints-GETapi-urls--id-">Redirect to the original URL</h2>
+                    <h2 id="endpoints-GETapi-urls--id-">GET api/urls/{id}</h2>
 
 <p>
 </p>
@@ -446,14 +438,14 @@ You can check the Dev Tools console for debugging information.</code></pre>
 
 <div class="bash-example">
     <pre><code class="language-bash">curl --request GET \
-    --get "http://localhost:8000/api/urls/architecto" \
+    --get "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls/architecto" \
     --header "Content-Type: application/json" \
     --header "Accept: application/json"</code></pre></div>
 
 
 <div class="javascript-example">
     <pre><code class="language-javascript">const url = new URL(
-    "http://localhost:8000/api/urls/architecto"
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls/architecto"
 );
 
 const headers = {
@@ -469,20 +461,6 @@ fetch(url, {
 </span>
 
 <span id="example-responses-GETapi-urls--id-">
-            <blockquote>
-            <p>Example response (302):</p>
-        </blockquote>
-                <pre>
-
-<code class="language-json" style="max-height: 300px;">{}</code>
- </pre>
-            <blockquote>
-            <p>Example response (404):</p>
-        </blockquote>
-                <pre>
-
-<code class="language-json" style="max-height: 300px;">{}</code>
- </pre>
             <blockquote>
             <p>Example response (404):</p>
         </blockquote>
@@ -583,20 +561,9 @@ You can check the Dev Tools console for debugging information.</code></pre>
     <br>
 <p>The ID of the url. Example: <code>architecto</code></p>
             </div>
-                    <div style="padding-left: 28px; clear: unset;">
-                <b style="line-height: 2;"><code>code</code></b>&nbsp;&nbsp;
-<small>string</small>&nbsp;
- &nbsp;
-                <input type="text" style="display: none"
-                              name="code"                data-endpoint="GETapi-urls--id-"
-               value="abc123"
-               data-component="url">
-    <br>
-<p>The short code. Example: <code>abc123</code></p>
-            </div>
                     </form>
 
-                    <h2 id="endpoints-PUTapi-urls--id-">Update the specified resource in storage.</h2>
+                    <h2 id="endpoints-PUTapi-urls--id-">PUT api/urls/{id}</h2>
 
 <p>
 </p>
@@ -609,14 +576,18 @@ You can check the Dev Tools console for debugging information.</code></pre>
 
 <div class="bash-example">
     <pre><code class="language-bash">curl --request PUT \
-    "http://localhost:8000/api/urls/16" \
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls/1" \
     --header "Content-Type: application/json" \
-    --header "Accept: application/json"</code></pre></div>
+    --header "Accept: application/json" \
+    --data "{
+    \"url\": \"http:\\/\\/www.bailey.biz\\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html\"
+}"
+</code></pre></div>
 
 
 <div class="javascript-example">
     <pre><code class="language-javascript">const url = new URL(
-    "http://localhost:8000/api/urls/16"
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls/1"
 );
 
 const headers = {
@@ -624,9 +595,14 @@ const headers = {
     "Accept": "application/json",
 };
 
+let body = {
+    "url": "http:\/\/www.bailey.biz\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
+};
+
 fetch(url, {
     method: "PUT",
     headers,
+    body: JSON.stringify(body),
 }).then(response =&gt; response.json());</code></pre></div>
 
 </span>
@@ -713,14 +689,26 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="number" style="display: none"
                step="any"               name="id"                data-endpoint="PUTapi-urls--id-"
-               value="16"
+               value="1"
                data-component="url">
     <br>
-<p>The ID of the url. Example: <code>16</code></p>
+<p>The ID of the url. Example: <code>1</code></p>
             </div>
-                    </form>
+                            <h4 class="fancy-heading-panel"><b>Body Parameters</b></h4>
+        <div style=" padding-left: 28px;  clear: unset;">
+            <b style="line-height: 2;"><code>url</code></b>&nbsp;&nbsp;
+<small>string</small>&nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="url"                data-endpoint="PUTapi-urls--id-"
+               value="http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
+               data-component="body">
+    <br>
+<p>Must not be greater than 2048 characters. Example: <code>http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html</code></p>
+        </div>
+        </form>
 
-                    <h2 id="endpoints-DELETEapi-urls--id-">Remove the specified resource from storage.</h2>
+                    <h2 id="endpoints-DELETEapi-urls--id-">DELETE api/urls/{id}</h2>
 
 <p>
 </p>
@@ -733,14 +721,14 @@ You can check the Dev Tools console for debugging information.</code></pre>
 
 <div class="bash-example">
     <pre><code class="language-bash">curl --request DELETE \
-    "http://localhost:8000/api/urls/16" \
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls/1" \
     --header "Content-Type: application/json" \
     --header "Accept: application/json"</code></pre></div>
 
 
 <div class="javascript-example">
     <pre><code class="language-javascript">const url = new URL(
-    "http://localhost:8000/api/urls/16"
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/urls/1"
 );
 
 const headers = {
@@ -833,10 +821,148 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="number" style="display: none"
                step="any"               name="id"                data-endpoint="DELETEapi-urls--id-"
-               value="16"
+               value="1"
                data-component="url">
     <br>
-<p>The ID of the url. Example: <code>16</code></p>
+<p>The ID of the url. Example: <code>1</code></p>
+            </div>
+                    </form>
+
+                    <h2 id="endpoints-GETapi-resolve--code-">GET api/resolve/{code}</h2>
+
+<p>
+</p>
+
+
+
+<span id="example-requests-GETapi-resolve--code-">
+<blockquote>Example request:</blockquote>
+
+
+<div class="bash-example">
+    <pre><code class="language-bash">curl --request GET \
+    --get "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/resolve/NG4" \
+    --header "Content-Type: application/json" \
+    --header "Accept: application/json"</code></pre></div>
+
+
+<div class="javascript-example">
+    <pre><code class="language-javascript">const url = new URL(
+    "http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com/api/resolve/NG4"
+);
+
+const headers = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+};
+
+fetch(url, {
+    method: "GET",
+    headers,
+}).then(response =&gt; response.json());</code></pre></div>
+
+</span>
+
+<span id="example-responses-GETapi-resolve--code-">
+            <blockquote>
+            <p>Example response (404):</p>
+        </blockquote>
+                <details class="annotation">
+            <summary style="cursor: pointer;">
+                <small onclick="textContent = parentElement.parentElement.open ? 'Show headers' : 'Hide headers'">Show headers</small>
+            </summary>
+            <pre><code class="language-http">cache-control: no-cache, private
+content-type: application/json
+x-ratelimit-limit: 60
+x-ratelimit-remaining: 59
+access-control-allow-origin: *
+ </code></pre></details>         <pre>
+
+<code class="language-json" style="max-height: 300px;">{
+    &quot;message&quot;: &quot;No se encontr&oacute; la URL solicitada.&quot;
+}</code>
+ </pre>
+    </span>
+<span id="execution-results-GETapi-resolve--code-" hidden>
+    <blockquote>Received response<span
+                id="execution-response-status-GETapi-resolve--code-"></span>:
+    </blockquote>
+    <pre class="json"><code id="execution-response-content-GETapi-resolve--code-"
+      data-empty-response-text="<Empty response>" style="max-height: 400px;"></code></pre>
+</span>
+<span id="execution-error-GETapi-resolve--code-" hidden>
+    <blockquote>Request failed with error:</blockquote>
+    <pre><code id="execution-error-message-GETapi-resolve--code-">
+
+Tip: Check that you&#039;re properly connected to the network.
+If you&#039;re a maintainer of ths API, verify that your API is running and you&#039;ve enabled CORS.
+You can check the Dev Tools console for debugging information.</code></pre>
+</span>
+<form id="form-GETapi-resolve--code-" data-method="GET"
+      data-path="api/resolve/{code}"
+      data-authed="0"
+      data-hasfiles="0"
+      data-isarraybody="0"
+      autocomplete="off"
+      onsubmit="event.preventDefault(); executeTryOut('GETapi-resolve--code-', this);">
+    <h3>
+        Request&nbsp;&nbsp;&nbsp;
+                    <button type="button"
+                    style="background-color: #8fbcd4; padding: 5px 10px; border-radius: 5px; border-width: thin;"
+                    id="btn-tryout-GETapi-resolve--code-"
+                    onclick="tryItOut('GETapi-resolve--code-');">Try it out ⚡
+            </button>
+            <button type="button"
+                    style="background-color: #c97a7e; padding: 5px 10px; border-radius: 5px; border-width: thin;"
+                    id="btn-canceltryout-GETapi-resolve--code-"
+                    onclick="cancelTryOut('GETapi-resolve--code-');" hidden>Cancel 🛑
+            </button>&nbsp;&nbsp;
+            <button type="submit"
+                    style="background-color: #6ac174; padding: 5px 10px; border-radius: 5px; border-width: thin;"
+                    id="btn-executetryout-GETapi-resolve--code-"
+                    data-initial-text="Send Request 💥"
+                    data-loading-text="⏱ Sending..."
+                    hidden>Send Request 💥
+            </button>
+            </h3>
+            <p>
+            <small class="badge badge-green">GET</small>
+            <b><code>api/resolve/{code}</code></b>
+        </p>
+                <h4 class="fancy-heading-panel"><b>Headers</b></h4>
+                                <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>Content-Type</code></b>&nbsp;&nbsp;
+&nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="Content-Type"                data-endpoint="GETapi-resolve--code-"
+               value="application/json"
+               data-component="header">
+    <br>
+<p>Example: <code>application/json</code></p>
+            </div>
+                                <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>Accept</code></b>&nbsp;&nbsp;
+&nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="Accept"                data-endpoint="GETapi-resolve--code-"
+               value="application/json"
+               data-component="header">
+    <br>
+<p>Example: <code>application/json</code></p>
+            </div>
+                        <h4 class="fancy-heading-panel"><b>URL Parameters</b></h4>
+                    <div style="padding-left: 28px; clear: unset;">
+                <b style="line-height: 2;"><code>code</code></b>&nbsp;&nbsp;
+<small>string</small>&nbsp;
+ &nbsp;
+                <input type="text" style="display: none"
+                              name="code"                data-endpoint="GETapi-resolve--code-"
+               value="NG4"
+               data-component="url">
+    <br>
+<p>Example: <code>NG4</code></p>
             </div>
                     </form>
 
