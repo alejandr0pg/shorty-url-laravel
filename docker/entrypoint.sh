@@ -77,6 +77,8 @@ echo "🧹 Clearing caches..."
 # Laravel 12 optimize:clear clears all cached bootstrap files
 php artisan optimize:clear
 php artisan cache:clear
+# Specifically clear route cache to ensure docs routes are available
+php artisan route:clear
 
 # Test database connection before proceeding
 echo "🔌 Testing database connection..."
@@ -110,9 +112,11 @@ fi
 # Cache for production only after successful setup
 if [ "$APP_ENV" = "production" ]; then
     echo "⚡ Optimizing for production..."
-    # Laravel 12 optimize command - caches config, routes, views, and bootstrap
-    php artisan optimize
-    echo "✅ Production optimizations complete"
+    # Cache configs, views, but skip route caching to avoid docs route issues
+    php artisan config:cache
+    php artisan view:cache
+    php artisan event:cache
+    echo "✅ Production optimizations complete (routes not cached to preserve docs)"
 fi
 
 # Final health check
