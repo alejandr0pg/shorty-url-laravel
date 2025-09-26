@@ -88,8 +88,6 @@ class UpdateUrlRequest extends FormRequest
 
     /**
      * Get the body parameters for API documentation
-     *
-     * @return array
      */
     public function bodyParameters(): array
     {
