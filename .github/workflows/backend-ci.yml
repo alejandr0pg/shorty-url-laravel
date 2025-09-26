@@ -34,10 +34,10 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY: 109995068952.dkr.ecr.us-east-1.amazonaws.com
   ECR_REPOSITORY: shrt-backend
-  ECS_CLUSTER_STAGING: shrt-backend-staging
-  ECS_CLUSTER_PRODUCTION: shrt-backend-production
+  ECS_CLUSTER_STAGING: shrt-staging-cluster
+  ECS_CLUSTER_PRODUCTION: shrt-production-cluster
   ECS_SERVICE_STAGING: shrt-backend-staging
-  ECS_SERVICE_PRODUCTION: shrt-backend-production
+  ECS_SERVICE_PRODUCTION: shrt-production-service
   ALB_DNS_NAME: ${{ secrets.ALB_DNS_NAME }}
   TARGET_GROUP_ARN_STAGING: ${{ secrets.TARGET_GROUP_ARN }}
   TARGET_GROUP_ARN_PRODUCTION: ${{ secrets.TARGET_GROUP_ARN }}
@@ -283,24 +283,24 @@ jobs:
         id: task-def
         run: |
           # Check if task definition exists
-          if aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_STAGING }} >/dev/null 2>&1; then
+          if aws ecs describe-task-definition --task-definition shrt-backend-staging >/dev/null 2>&1; then
             echo "📝 Updating existing staging task definition..."
 
             # Download current task definition and filter only necessary fields
             aws ecs describe-task-definition \
-              --task-definition ${{ env.ECS_SERVICE_STAGING }} \
+              --task-definition shrt-backend-staging \
               --query 'taskDefinition|{family:family,taskRoleArn:taskRoleArn,executionRoleArn:executionRoleArn,networkMode:networkMode,containerDefinitions:containerDefinitions,volumes:volumes,placementConstraints:placementConstraints,requiresCompatibilities:requiresCompatibilities,cpu:cpu,memory:memory}' > task-definition.json
           else
             echo "⚠️ Staging task definition does not exist. Creating minimal task definition for first deployment..."
 
             # Set variables for expansion
-            ECS_SERVICE_STAGING="${{ env.ECS_SERVICE_STAGING }}"
+            TASK_DEFINITION_FAMILY="shrt-backend-staging"
             AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
             AWS_REGION="${{ env.AWS_REGION }}"
 
             # Create a minimal task definition for first deployment
             jq -n \
-              --arg family "$ECS_SERVICE_STAGING" \
+              --arg family "$TASK_DEFINITION_FAMILY" \
               --arg account "$AWS_ACCOUNT_ID" \
               --arg region "$AWS_REGION" \
               '{
@@ -722,10 +722,10 @@ jobs:
           echo "📦 Creating backup of current production deployment..."
 
           # Check if task definition exists before trying to backup
-          if aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} >/dev/null 2>&1; then
+          if aws ecs describe-task-definition --task-definition shrt-backend-production >/dev/null 2>&1; then
             # Get current task definition with only necessary fields
             aws ecs describe-task-definition \
-              --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --task-definition shrt-backend-production \
               --query 'taskDefinition|{family:family,taskRoleArn:taskRoleArn,executionRoleArn:executionRoleArn,networkMode:networkMode,containerDefinitions:containerDefinitions,volumes:volumes,placementConstraints:placementConstraints,requiresCompatibilities:requiresCompatibilities,cpu:cpu,memory:memory}' > current-production-task.json
 
             # Store as backup (commented out until shrt-backups bucket is created)
@@ -754,12 +754,12 @@ jobs:
           AWS_SECRET_ACCESS_KEY_SECRET="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
           AWS_BUCKET="${{ secrets.AWS_BUCKET }}"
 
-          if aws ecs describe-task-definition --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} >/dev/null 2>&1; then
+          if aws ecs describe-task-definition --task-definition shrt-backend-production >/dev/null 2>&1; then
             echo "📝 Updating existing production task definition with new environment variables..."
 
             # Download current task definition structure but we'll rebuild the environment variables
             aws ecs describe-task-definition \
-              --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
+              --task-definition shrt-backend-production \
               --query 'taskDefinition|{family:family,taskRoleArn:taskRoleArn,executionRoleArn:executionRoleArn,networkMode:networkMode,volumes:volumes,placementConstraints:placementConstraints,requiresCompatibilities:requiresCompatibilities,cpu:cpu,memory:memory}' > base-task-definition.json
 
             # Rebuild task definition with updated environment variables
@@ -819,13 +819,13 @@ jobs:
             echo "⚠️ Production task definition does not exist. Creating minimal task definition for first deployment..."
 
             # Set variables for expansion
-            ECS_SERVICE_PRODUCTION="${{ env.ECS_SERVICE_PRODUCTION }}"
+            TASK_DEFINITION_FAMILY="shrt-backend-production"
             AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
             AWS_REGION="${{ env.AWS_REGION }}"
 
             # Create a minimal task definition for first deployment
             jq -n \
-              --arg family "$ECS_SERVICE_PRODUCTION" \
+              --arg family "$TASK_DEFINITION_FAMILY" \
               --arg account "$AWS_ACCOUNT_ID" \
               --arg region "$AWS_REGION" \
               '{
