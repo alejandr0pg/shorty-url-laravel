@@ -64,4 +64,20 @@ class StoreUrlRequest extends FormRequest
     {
         return $this->header('X-Device-ID');
     }
+
+    /**
+     * Get the body parameters for API documentation
+     *
+     * @return array
+     */
+    public function bodyParameters(): array
+    {
+        return [
+            'url' => [
+                'description' => 'The URL to be shortened. Must be a valid RFC 1738 compliant URL.',
+                'example' => 'https://www.example.com/very/long/path/to/resource',
+                'required' => true,
+            ],
+        ];
+    }
 }

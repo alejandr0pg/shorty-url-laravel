@@ -85,4 +85,20 @@ class UpdateUrlRequest extends FormRequest
     {
         return $this->header('X-Device-ID');
     }
+
+    /**
+     * Get the body parameters for API documentation
+     *
+     * @return array
+     */
+    public function bodyParameters(): array
+    {
+        return [
+            'url' => [
+                'description' => 'The new URL to replace the existing one. Must be a valid RFC 1738 compliant URL.',
+                'example' => 'https://www.updated-example.com/new/path',
+                'required' => true,
+            ],
+        ];
+    }
 }

@@ -73,5 +73,17 @@ class DeleteUrlRequest extends FormRequest
         return $this->url;
     }
 
+    /**
+     * Get the body parameters for API documentation
+     *
+     * @return array
+     */
+    public function bodyParameters(): array
+    {
+        return [
+            // No body parameters required for DELETE request
+        ];
+    }
+
     protected ?Url $url = null;
 }

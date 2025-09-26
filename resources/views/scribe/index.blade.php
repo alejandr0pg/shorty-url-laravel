@@ -108,6 +108,7 @@
     <div class="dark-box"></div>
     <div class="content">
         <h1 id="introduction">Introduction</h1>
+<p>URL Shortener API - Create, manage and redirect short URLs</p>
 <aside>
     <strong>Base URL</strong>: <code>http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com</code>
 </aside>
@@ -140,9 +141,9 @@ You can switch the language used with the tabs at the top right (or from the nav
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"search\": \"b\",
-    \"per_page\": 22,
-    \"page\": 67
+    \"search\": \"example.com\",
+    \"per_page\": 15,
+    \"page\": 1
 }"
 </code></pre></div>
 
@@ -158,9 +159,9 @@ const headers = {
 };
 
 let body = {
-    "search": "b",
-    "per_page": 22,
-    "page": 67
+    "search": "example.com",
+    "per_page": 15,
+    "page": 1
 };
 
 fetch(url, {
@@ -267,10 +268,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
 <i>optional</i> &nbsp;
                 <input type="text" style="display: none"
                               name="search"                data-endpoint="GETapi-urls"
-               value="b"
+               value="example.com"
                data-component="body">
     <br>
-<p>Must not be greater than 255 characters. Example: <code>b</code></p>
+<p>Search term to filter URLs by original URL or short code. Must not be greater than 255 characters. Example: <code>example.com</code></p>
         </div>
                 <div style=" padding-left: 28px;  clear: unset;">
             <b style="line-height: 2;"><code>per_page</code></b>&nbsp;&nbsp;
@@ -278,10 +279,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
 <i>optional</i> &nbsp;
                 <input type="number" style="display: none"
                step="any"               name="per_page"                data-endpoint="GETapi-urls"
-               value="22"
+               value="15"
                data-component="body">
     <br>
-<p>Must be at least 1. Must not be greater than 100. Example: <code>22</code></p>
+<p>Number of items to return per page (1-100). Must be at least 1. Must not be greater than 100. Example: <code>15</code></p>
         </div>
                 <div style=" padding-left: 28px;  clear: unset;">
             <b style="line-height: 2;"><code>page</code></b>&nbsp;&nbsp;
@@ -289,10 +290,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
 <i>optional</i> &nbsp;
                 <input type="number" style="display: none"
                step="any"               name="page"                data-endpoint="GETapi-urls"
-               value="67"
+               value="1"
                data-component="body">
     <br>
-<p>Must be at least 1. Example: <code>67</code></p>
+<p>Page number for pagination. Must be at least 1. Example: <code>1</code></p>
         </div>
         </form>
 
@@ -313,7 +314,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"url\": \"http:\\/\\/www.bailey.biz\\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html\"
+    \"url\": \"https:\\/\\/www.example.com\\/very\\/long\\/path\\/to\\/resource\"
 }"
 </code></pre></div>
 
@@ -329,7 +330,7 @@ const headers = {
 };
 
 let body = {
-    "url": "http:\/\/www.bailey.biz\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
+    "url": "https:\/\/www.example.com\/very\/long\/path\/to\/resource"
 };
 
 fetch(url, {
@@ -418,10 +419,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="text" style="display: none"
                               name="url"                data-endpoint="POSTapi-urls"
-               value="http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
+               value="https://www.example.com/very/long/path/to/resource"
                data-component="body">
     <br>
-<p>Must not be greater than 2048 characters. Example: <code>http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html</code></p>
+<p>The URL to be shortened. Must be a valid RFC 1738 compliant URL. Must not be greater than 2048 characters. Example: <code>https://www.example.com/very/long/path/to/resource</code></p>
         </div>
         </form>
 
@@ -580,7 +581,7 @@ You can check the Dev Tools console for debugging information.</code></pre>
     --header "Content-Type: application/json" \
     --header "Accept: application/json" \
     --data "{
-    \"url\": \"http:\\/\\/www.bailey.biz\\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html\"
+    \"url\": \"https:\\/\\/www.updated-example.com\\/new\\/path\"
 }"
 </code></pre></div>
 
@@ -596,7 +597,7 @@ const headers = {
 };
 
 let body = {
-    "url": "http:\/\/www.bailey.biz\/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
+    "url": "https:\/\/www.updated-example.com\/new\/path"
 };
 
 fetch(url, {
@@ -701,10 +702,10 @@ You can check the Dev Tools console for debugging information.</code></pre>
  &nbsp;
                 <input type="text" style="display: none"
                               name="url"                data-endpoint="PUTapi-urls--id-"
-               value="http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html"
+               value="https://www.updated-example.com/new/path"
                data-component="body">
     <br>
-<p>Must not be greater than 2048 characters. Example: <code>http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html</code></p>
+<p>The new URL to replace the existing one. Must be a valid RFC 1738 compliant URL. Must not be greater than 2048 characters. Example: <code>https://www.updated-example.com/new/path</code></p>
         </div>
         </form>
 

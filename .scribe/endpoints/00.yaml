@@ -25,9 +25,9 @@ endpoints:
     bodyParameters:
       search:
         name: search
-        description: 'Must not be greater than 255 characters.'
+        description: 'Search term to filter URLs by original URL or short code. Must not be greater than 255 characters.'
         required: false
-        example: b
+        example: example.com
         type: string
         enumValues: []
         exampleWasSpecified: false
@@ -35,9 +35,9 @@ endpoints:
         custom: []
       per_page:
         name: per_page
-        description: 'Must be at least 1. Must not be greater than 100.'
+        description: 'Number of items to return per page (1-100). Must be at least 1. Must not be greater than 100.'
         required: false
-        example: 22
+        example: 15
         type: integer
         enumValues: []
         exampleWasSpecified: false
@@ -45,18 +45,18 @@ endpoints:
         custom: []
       page:
         name: page
-        description: 'Must be at least 1.'
+        description: 'Page number for pagination. Must be at least 1.'
         required: false
-        example: 67
+        example: 1
         type: integer
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanBodyParameters:
-      search: b
-      per_page: 22
-      page: 67
+      search: example.com
+      per_page: 15
+      page: 1
     fileParameters: []
     responses:
       -
@@ -100,16 +100,16 @@ endpoints:
     bodyParameters:
       url:
         name: url
-        description: 'Must not be greater than 2048 characters.'
+        description: 'The URL to be shortened. Must be a valid RFC 1738 compliant URL. Must not be greater than 2048 characters.'
         required: true
-        example: 'http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html'
+        example: 'https://www.example.com/very/long/path/to/resource'
         type: string
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanBodyParameters:
-      url: 'http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html'
+      url: 'https://www.example.com/very/long/path/to/resource'
     fileParameters: []
     responses: []
     responseFields: []
@@ -210,16 +210,16 @@ endpoints:
     bodyParameters:
       url:
         name: url
-        description: 'Must not be greater than 2048 characters.'
+        description: 'The new URL to replace the existing one. Must be a valid RFC 1738 compliant URL. Must not be greater than 2048 characters.'
         required: true
-        example: 'http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html'
+        example: 'https://www.updated-example.com/new/path'
         type: string
         enumValues: []
         exampleWasSpecified: false
         nullable: false
         custom: []
     cleanBodyParameters:
-      url: 'http://www.bailey.biz/quos-velit-et-fugiat-sunt-nihil-accusantium-harum.html'
+      url: 'https://www.updated-example.com/new/path'
     fileParameters: []
     responses: []
     responseFields: []

@@ -71,4 +71,30 @@ class IndexUrlRequest extends FormRequest
     {
         return $this->header('X-Device-ID');
     }
+
+    /**
+     * Get the body parameters for API documentation
+     *
+     * @return array
+     */
+    public function bodyParameters(): array
+    {
+        return [
+            'search' => [
+                'description' => 'Search term to filter URLs by original URL or short code.',
+                'example' => 'example.com',
+                'required' => false,
+            ],
+            'per_page' => [
+                'description' => 'Number of items to return per page (1-100).',
+                'example' => 15,
+                'required' => false,
+            ],
+            'page' => [
+                'description' => 'Page number for pagination.',
+                'example' => 1,
+                'required' => false,
+            ],
+        ];
+    }
 }

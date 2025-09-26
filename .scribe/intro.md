@@ -1,6 +1,6 @@
 # Introduction
 
-
+URL Shortener API - Create, manage and redirect short URLs
 
 <aside>
     <strong>Base URL</strong>: <code>http://shrt-production-alb-132772302.us-east-1.elb.amazonaws.com</code>
