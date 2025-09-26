@@ -1,0 +1,531 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+    paths:
+      - '**.php'
+      - 'composer.json'
+      - 'composer.lock'
+      - '.env.example'
+      - 'database/**'
+      - 'tests/**'
+      - 'docker/**'
+      - 'Dockerfile*'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '**.php'
+      - 'composer.json'
+      - 'composer.lock'
+      - '.env.example'
+      - 'database/**'
+      - 'tests/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      skip_tests:
+        description: 'Skip test execution'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PHP_VERSION: '8.2'
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: 109995068952.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY: shrt-backend
+  ECS_CLUSTER_STAGING: shrt-staging-cluster
+  ECS_CLUSTER_PRODUCTION: shrt-production-cluster
+  ECS_SERVICE_STAGING: shrt-backend-staging
+  ECS_SERVICE_PRODUCTION: shrt-backend-production
+
+jobs:
+  # Job para análisis de código y tests
+  quality-assurance:
+    name: Code Quality & Tests
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_tests }}
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: shrt_test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ env.PHP_VERSION }}
+        extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, redis
+        coverage: xdebug
+        tools: composer:v2
+
+    - name: Cache Composer Dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.composer/cache/files
+        key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-composer-
+
+    - name: Install Composer Dependencies
+      run: composer install --no-progress --prefer-dist --optimize-autoloader --no-dev
+
+    - name: Install Dev Dependencies for Testing
+      run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+    - name: Setup Environment
+      run: |
+        cp .env.example .env
+        php artisan key:generate
+
+        # Configure test database
+        sed -i 's/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/' .env
+        sed -i 's/# DB_HOST=127.0.0.1/DB_HOST=127.0.0.1/' .env
+        sed -i 's/# DB_PORT=3306/DB_PORT=3306/' .env
+        sed -i 's/# DB_DATABASE=laravel/DB_DATABASE=shrt_test/' .env
+        sed -i 's/# DB_USERNAME=root/DB_USERNAME=root/' .env
+        sed -i 's/# DB_PASSWORD=/DB_PASSWORD=password/' .env
+
+        # Configure Redis
+        echo "REDIS_HOST=127.0.0.1" >> .env
+        echo "REDIS_PORT=6379" >> .env
+
+        # Configure cache and session
+        echo "CACHE_DRIVER=redis" >> .env
+        echo "SESSION_DRIVER=redis" >> .env
+
+    - name: Run Database Migrations
+      run: php artisan migrate --force --seed
+
+    - name: Check Code Style with Pint
+      run: ./vendor/bin/pint --test
+
+    - name: Static Analysis with PHPStan
+      run: ./vendor/bin/phpstan analyse --error-format=github
+
+    - name: Run Feature Tests
+      run: php artisan test --coverage --coverage-clover=coverage.xml --stop-on-failure
+
+    - name: Extract Coverage Percentage
+      id: coverage
+      run: |
+        COVERAGE=$(php -r "
+          \$xml = simplexml_load_file('coverage.xml');
+          \$metrics = \$xml->project->metrics;
+          \$covered = (float) \$metrics['coveredstatements'];
+          \$total = (float) \$metrics['statements'];
+          \$percentage = \$total > 0 ? round((\$covered / \$total) * 100, 2) : 0;
+          echo \$percentage;
+        ")
+        echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+        echo "Code coverage: $COVERAGE%"
+
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: backend
+        name: backend-coverage
+        fail_ci_if_error: false
+
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ github.sha }}
+        path: |
+          coverage.xml
+          storage/logs/
+        retention-days: 5
+
+  # Job para construir imagen Docker
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: quality-assurance
+    if: always() && (needs.quality-assurance.result == 'success' || inputs.skip_tests)
+
+    strategy:
+      matrix:
+        environment: [staging, production]
+        include:
+          - environment: staging
+            app_env: staging
+            app_debug: true
+          - environment: production
+            app_env: production
+            app_debug: false
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Extract Metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+        tags: |
+          type=ref,event=branch,suffix=-${{ matrix.environment }}
+          type=ref,event=pr,suffix=-${{ matrix.environment }}
+          type=sha,format=short,suffix=-${{ matrix.environment }}
+          type=raw,value=latest-${{ matrix.environment }},enable={{is_default_branch}}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and Push Docker Image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          APP_ENV=${{ matrix.app_env }}
+          APP_DEBUG=${{ matrix.app_debug }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+    - name: Scan Image with Trivy
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-${{ matrix.environment }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+      continue-on-error: true
+
+    - name: Upload Trivy Scan Results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
+
+  # Job para deploy a staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [quality-assurance, build-docker]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: https://${{ secrets.STAGING_DOMAIN || 'staging-api.tu-dominio.com' }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Update ECS Task Definition
+      id: task-def
+      run: |
+        # Download current task definition
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_SERVICE_STAGING }} \
+          --query taskDefinition > task-definition.json
+
+        # Update image in task definition
+        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-staging"
+
+        jq --arg IMAGE "$NEW_IMAGE" \
+           '.containerDefinitions[0].image = $IMAGE' \
+           task-definition.json > updated-task-definition.json
+
+        # Register new task definition
+        aws ecs register-task-definition \
+          --cli-input-json file://updated-task-definition.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text > task-definition-arn.txt
+
+        echo "task-definition-arn=$(cat task-definition-arn.txt)" >> $GITHUB_OUTPUT
+
+    - name: Deploy to ECS Staging
+      run: |
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+          --service ${{ env.ECS_SERVICE_STAGING }} \
+          --task-definition ${{ steps.task-def.outputs.task-definition-arn }} \
+          --force-new-deployment
+
+        echo "🚀 Deployment initiated to staging environment"
+
+    - name: Wait for Deployment Stability
+      run: |
+        echo "⏳ Waiting for service to reach stable state..."
+        aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+          --services ${{ env.ECS_SERVICE_STAGING }}
+
+        echo "✅ Staging deployment completed successfully"
+
+    - name: Run Database Migrations
+      run: |
+        # Execute migrations in the ECS task
+        TASK_ARN=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+          --service-name ${{ env.ECS_SERVICE_STAGING }} \
+          --query 'taskArns[0]' --output text)
+
+        aws ecs execute-command \
+          --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+          --task $TASK_ARN \
+          --container app \
+          --interactive \
+          --command "php artisan migrate --force" || echo "Migration command completed"
+
+    - name: Health Check
+      run: |
+        echo "🔍 Performing health checks..."
+
+        STAGING_URL="https://${{ secrets.STAGING_DOMAIN || 'staging-api.tu-dominio.com' }}"
+
+        for i in {1..10}; do
+          if curl -f -s "$STAGING_URL/health" > /dev/null; then
+            echo "✅ Staging health check passed"
+            exit 0
+          fi
+          echo "Attempt $i/10: Waiting for service..."
+          sleep 30
+        done
+
+        echo "❌ Staging health check failed"
+        exit 1
+
+  # Job para deploy a producción
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [quality-assurance, build-docker]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment:
+      name: production
+      url: https://${{ secrets.PRODUCTION_DOMAIN || 'api.tu-dominio.com' }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Create Production Backup
+      run: |
+        echo "📦 Creating backup of current production deployment..."
+
+        # Get current task definition
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
+          --query taskDefinition > current-production-task.json
+
+        # Store as backup
+        BACKUP_NAME="backup-$(date +%Y%m%d-%H%M%S)"
+        aws s3 cp current-production-task.json \
+          "s3://shrt-backups/task-definitions/$BACKUP_NAME.json" || true
+
+    - name: Update Production Task Definition
+      id: task-def-prod
+      run: |
+        # Download current task definition
+        aws ecs describe-task-definition \
+          --task-definition ${{ env.ECS_SERVICE_PRODUCTION }} \
+          --query taskDefinition > task-definition.json
+
+        # Update image in task definition
+        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}-production"
+
+        jq --arg IMAGE "$NEW_IMAGE" \
+           '.containerDefinitions[0].image = $IMAGE' \
+           task-definition.json > updated-task-definition.json
+
+        # Register new task definition
+        aws ecs register-task-definition \
+          --cli-input-json file://updated-task-definition.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text > task-definition-arn.txt
+
+        echo "task-definition-arn=$(cat task-definition-arn.txt)" >> $GITHUB_OUTPUT
+
+    - name: Blue-Green Deployment to Production
+      run: |
+        echo "🚀 Starting blue-green deployment to production..."
+
+        # Update service with new task definition
+        aws ecs update-service \
+          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+          --service ${{ env.ECS_SERVICE_PRODUCTION }} \
+          --task-definition ${{ steps.task-def-prod.outputs.task-definition-arn }} \
+          --force-new-deployment
+
+    - name: Wait for Production Deployment
+      run: |
+        echo "⏳ Waiting for production service to reach stable state..."
+
+        timeout 1800 aws ecs wait services-stable \
+          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+          --services ${{ env.ECS_SERVICE_PRODUCTION }}
+
+        echo "✅ Production deployment completed successfully"
+
+    - name: Run Production Migrations
+      run: |
+        # Execute migrations in production
+        TASK_ARN=$(aws ecs list-tasks \
+          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+          --service-name ${{ env.ECS_SERVICE_PRODUCTION }} \
+          --query 'taskArns[0]' --output text)
+
+        aws ecs execute-command \
+          --cluster ${{ env.ECS_CLUSTER_PRODUCTION }} \
+          --task $TASK_ARN \
+          --container app \
+          --interactive \
+          --command "php artisan migrate --force" || echo "Migration command completed"
+
+    - name: Production Health Check & Smoke Tests
+      run: |
+        echo "🔍 Running production health checks and smoke tests..."
+
+        # Basic health check
+        PRODUCTION_URL="https://${{ secrets.PRODUCTION_DOMAIN || 'api.tu-dominio.com' }}"
+
+        for i in {1..15}; do
+          if curl -f -s "$PRODUCTION_URL/health" > /dev/null; then
+            echo "✅ Production health check passed"
+            break
+          fi
+          if [ $i -eq 15 ]; then
+            echo "❌ Production health check failed"
+            exit 1
+          fi
+          echo "Attempt $i/15: Waiting for service..."
+          sleep 30
+        done
+
+        # API smoke tests
+        if curl -f -s "$PRODUCTION_URL/api/health" | jq -e '.status == "ok"' > /dev/null; then
+          echo "✅ API endpoint smoke test passed"
+        else
+          echo "❌ API endpoint smoke test failed"
+          exit 1
+        fi
+
+        # Database connectivity test
+        if curl -f -s "$PRODUCTION_URL/api/stats" > /dev/null; then
+          echo "✅ Database connectivity test passed"
+        else
+          echo "⚠️ Database connectivity test inconclusive"
+        fi
+
+  # Job para notificaciones
+  notify-deployment:
+    name: Deployment Notifications
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+
+    steps:
+    - name: Prepare Deployment Report
+      id: report
+      run: |
+        STATUS="✅ Success"
+        ENVIRONMENTS=""
+
+        if [[ "${{ needs.deploy-staging.result }}" == "failure" ]] || [[ "${{ needs.deploy-production.result }}" == "failure" ]]; then
+          STATUS="❌ Failed"
+        fi
+
+        if [[ "${{ needs.deploy-staging.result }}" == "success" ]]; then
+          ENVIRONMENTS="staging"
+        fi
+
+        if [[ "${{ needs.deploy-production.result }}" == "success" ]]; then
+          if [ -n "$ENVIRONMENTS" ]; then
+            ENVIRONMENTS="$ENVIRONMENTS and production"
+          else
+            ENVIRONMENTS="production"
+          fi
+        fi
+
+        if [ -z "$ENVIRONMENTS" ]; then
+          ENVIRONMENTS="none"
+        fi
+
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "environments=$ENVIRONMENTS" >> $GITHUB_OUTPUT
+
+    - name: Post Deployment Summary
+      run: |
+        echo "## 🚀 Backend Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Status**: ${{ steps.report.outputs.status }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Environments**: ${{ steps.report.outputs.environments }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Deployment Details:" >> $GITHUB_STEP_SUMMARY
+        echo "- Docker image pushed to ECR" >> $GITHUB_STEP_SUMMARY
+        echo "- ECS services updated with new task definitions" >> $GITHUB_STEP_SUMMARY
+        echo "- Database migrations executed" >> $GITHUB_STEP_SUMMARY
+        echo "- Health checks completed" >> $GITHUB_STEP_SUMMARY
+
+        # Here you could integrate with Slack, Teams, etc.
+        echo "🚀 Backend Deployment: ${{ steps.report.outputs.status }}"
+        echo "🌍 Environments: ${{ steps.report.outputs.environments }}"

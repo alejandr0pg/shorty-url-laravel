@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Laravel Backend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shrt_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/var/www/html
+      - ./storage:/var/www/html/storage
+    environment:
+      - APP_ENV=production
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=shrt
+      - DB_USERNAME=shrt_user
+      - DB_PASSWORD=shrt_password
+      - CACHE_DRIVER=redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - shrt_network
+
+  # Frontend (React Production Build)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: shrt_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+    networks:
+      - shrt_network
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: shrt_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: shrt
+      MYSQL_USER: shrt_user
+      MYSQL_PASSWORD: shrt_password
+      MYSQL_ROOT_PASSWORD: root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - shrt_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: shrt_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - shrt_network
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: shrt_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+      - frontend
+    networks:
+      - shrt_network
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  shrt_network:
+    driver: bridge
