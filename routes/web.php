@@ -17,17 +17,19 @@ Route::group(['prefix' => 'docs', 'middleware' => []], function () {
 
     Route::get('/postman', function () {
         $collection = file_get_contents(storage_path('app/private/scribe/collection.json'));
+
         return response($collection, 200, [
             'Content-Type' => 'application/json',
-            'Content-Disposition' => 'attachment; filename="api-collection.json"'
+            'Content-Disposition' => 'attachment; filename="api-collection.json"',
         ]);
     })->name('scribe.postman');
 
     Route::get('/openapi', function () {
         $openapi = file_get_contents(storage_path('app/private/scribe/openapi.yaml'));
+
         return response($openapi, 200, [
             'Content-Type' => 'application/x-yaml',
-            'Content-Disposition' => 'attachment; filename="openapi.yaml"'
+            'Content-Disposition' => 'attachment; filename="openapi.yaml"',
         ]);
     })->name('scribe.openapi');
 });
