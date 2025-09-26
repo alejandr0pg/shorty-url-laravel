@@ -480,19 +480,10 @@ aws cloudfront create-distribution \
 
 Ve a tu repositorio GitHub → Settings → Secrets and variables → Actions y configura los siguientes secrets:
 
-### ✅ Infraestructura AWS Desplegada:
-
--   **ECR Repository:** `109995068952.dkr.ecr.us-east-1.amazonaws.com/shrt-backend`
--   **ECS Clusters:** `shrt-backend-production`, `shrt-staging-cluster`
--   **S3 Buckets:** `shrt-frontend-staging`, `shrt-frontend-production`
--   **CloudFront Distributions:**
-    -   Staging: https://d22b8xej3kve4.cloudfront.net (`E2Q0FJ804E8MGI`)
-    -   Production: https://d3dcezd6ji3gto.cloudfront.net (`E1JT122OSSCK8R`)
--   **Backend API:** http://98.83.150.116:8000 (IP pública actual)
-
 ### 🔐 GitHub Secrets Necesarios:
 
 #### ☁️ Credenciales AWS (OBLIGATORIOS)
+
 ```bash
 AWS_ACCESS_KEY_ID=AKIA***************XYZ
 AWS_SECRET_ACCESS_KEY=abc123***************************xyz789
@@ -501,12 +492,14 @@ AWS_REGION=us-east-1
 ```
 
 #### 🐳 Configuración Docker/ECR (OBLIGATORIOS)
+
 ```bash
 ECR_REGISTRY=109995068952.dkr.ecr.us-east-1.amazonaws.com
 ECR_REPOSITORY=shrt-backend
 ```
 
 #### 🚀 Configuración ECS (OBLIGATORIOS)
+
 ```bash
 ECS_CLUSTER_STAGING=shrt-staging-cluster
 ECS_CLUSTER_PRODUCTION=shrt-backend-production
@@ -517,6 +510,7 @@ ECS_TASK_DEFINITION_PRODUCTION=shrt-backend-production
 ```
 
 #### 🗄️ Base de Datos (OBLIGATORIOS)
+
 ```bash
 DB_HOST_STAGING=shrt-staging-db.*****.us-east-1.rds.amazonaws.com
 DB_HOST_PRODUCTION=shrt-production-db.*****.us-east-1.rds.amazonaws.com
@@ -527,6 +521,7 @@ DB_PORT=3306
 ```
 
 #### 🔥 Redis Cache (OBLIGATORIOS)
+
 ```bash
 REDIS_HOST_STAGING=shrt-staging-redis.*****.cache.amazonaws.com
 REDIS_HOST_PRODUCTION=shrt-production-redis.*****.cache.amazonaws.com
@@ -535,6 +530,7 @@ REDIS_PASSWORD=redis***secret***pass***2024
 ```
 
 #### 🌐 Frontend S3/CloudFront (OBLIGATORIOS)
+
 ```bash
 S3_BUCKET_STAGING=shrt-frontend-staging
 S3_BUCKET_PRODUCTION=shrt-frontend-production
@@ -543,6 +539,7 @@ CLOUDFRONT_DISTRIBUTION_ID_PRODUCTION=E1JT122OSSCK8R
 ```
 
 #### 🔐 Aplicación Laravel (OBLIGATORIOS)
+
 ```bash
 APP_KEY_STAGING=base64:abc123***************************xyz789==
 APP_KEY_PRODUCTION=base64:def456***************************uvw012==
@@ -555,6 +552,7 @@ APP_URL_PRODUCTION=http://shrt-production-alb-***.us-east-1.elb.amazonaws.com
 ```
 
 #### 📧 Configuración de Correo (OPCIONALES)
+
 ```bash
 MAIL_MAILER=smtp
 MAIL_HOST=smtp.gmail.com
@@ -567,6 +565,7 @@ MAIL_FROM_NAME="Shrt URL Shortener"
 ```
 
 #### 🔍 Monitoreo y Logs (OPCIONALES)
+
 ```bash
 LOG_CHANNEL=cloudwatch
 LOG_LEVEL=info
@@ -575,6 +574,7 @@ NEW_RELIC_LICENSE_KEY=***license_key***
 ```
 
 #### 🛡️ Seguridad Adicional (RECOMENDADOS)
+
 ```bash
 JWT_SECRET=your***jwt***secret***key***here
 BCRYPT_ROUNDS=12
@@ -592,12 +592,12 @@ SANCTUM_STATEFUL_DOMAINS=yourapp.com,www.yourapp.com
 
 ### ⚠️ Notas Importantes:
 
-- **Reemplaza los valores ofuscados** (marcados con `***`) con tus valores reales
-- **Nunca commitees secrets** en el código fuente
-- **Usa valores únicos** para staging y production
-- **Genera APP_KEY** con: `php artisan key:generate --show`
-- **Las credenciales AWS** deben tener permisos para ECS, ECR, S3, RDS y CloudFront
-- **Verifica que todos los recursos AWS** existan antes del deployment
+-   **Reemplaza los valores ofuscados** (marcados con `***`) con tus valores reales
+-   **Nunca commitees secrets** en el código fuente
+-   **Usa valores únicos** para staging y production
+-   **Genera APP_KEY** con: `php artisan key:generate --show`
+-   **Las credenciales AWS** deben tener permisos para ECS, ECR, S3, RDS y CloudFront
+-   **Verifica que todos los recursos AWS** existan antes del deployment
 
 ## 📦 Comandos Docker Disponibles
 
