@@ -799,21 +799,6 @@ aws s3api get-bucket-policy --bucket {YOUR_DOMAIN}-frontend-production
 aws cloudfront get-distribution --id {PRODUCTION_DISTRIBUTION_ID}
 ```
 
-## 📚 Documentación Adicional
-
-### 🔧 Configuración y Despliegue
-
--   **[Configuración GitHub Secrets](GITHUB_SECRETS_SETUP.md)** - Guía completa para configurar CI/CD
--   **[Guía Visual GitHub](CONFIGURACION_GITHUB_VISUAL.md)** - Screenshots paso a paso
--   **[Endpoints AWS Finales](AWS_ENDPOINTS.md)** - URLs y endpoints listos para usar
--   **[Servicios AWS Pendientes](CONFIGURACION_PENDIENTE_AWS.md)** - RDS, Redis y ALB (COMPLETADO)
-
-### 📖 Documentación Técnica
-
--   [Deployment Guide](DEPLOYMENT_GUIDE.md) - Guía detallada de despliegue
--   [API Documentation](docs/api.md) - Documentación de endpoints
--   [Architecture Overview](docs/architecture.md) - Arquitectura del sistema
-
 ## 🤝 Contribución
 
 1. Fork el repositorio
