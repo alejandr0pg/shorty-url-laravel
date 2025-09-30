@@ -108,7 +108,9 @@ COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Copy entrypoint script
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+    && ls -la /usr/local/bin/entrypoint.sh \
+    && head -1 /usr/local/bin/entrypoint.sh
 
 # Health check - use simpler endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
