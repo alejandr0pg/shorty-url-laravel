@@ -22,77 +22,116 @@ Acortador de URLs desarrollado con Laravel y React, desplegado en AWS ECS con CI
 
 ## 🚀 Setup Rápido
 
-### Local Development (Docker)
+### Opción 1: Sin Docker (Más Simple)
 
 ```bash
+# 1. Clonar e instalar
+git clone <repo-url>
+cd shrt
+composer install
+
+# 2. Configurar environment
+cp .env.example .env
+php artisan key:generate
+
+# 3. Base de datos SQLite (local)
+touch database/database.sqlite
+
+# 4. Configurar .env para SQLite
+DB_CONNECTION=sqlite
+DB_DATABASE=/ruta/completa/a/database/database.sqlite
+
+# 5. Migrar y seed
+php artisan migrate --seed
+
+# 6. Generar documentación API
+php artisan scribe:generate
+
+# 7. Iniciar servidor
+php artisan serve
+# ✅ Listo: http://localhost:8000
+```
+
+**Verificar que funciona:**
+```bash
+curl http://localhost:8000/health
+open http://localhost:8000/docs
+```
+
+### Opción 2: Con Docker Compose
+
+```bash
+# 1. Clonar repositorio
 git clone <repo-url>
 cd shrt
 
-# Copiar y configurar environment
+# 2. Copiar .env (se creará en el build)
 cp .env.example .env
-php artisan key:generate
 
-# Iniciar con Docker Compose
+# 3. Iniciar servicios
 docker-compose up -d
 
-# Setup base de datos
-php artisan migrate --seed
+# 4. Ver logs
+docker-compose logs -f
 
-# Generar documentación
-php artisan scribe:generate
+# ✅ Listo: http://localhost:8000
 ```
 
-**Acceder a:**
-- Backend: <http://localhost:8000>
-- API Docs: <http://localhost:8000/docs>
-- Health Check: <http://localhost:8000/health>
+**Servicios incluidos:**
+- Backend API: http://localhost:8000
+- MySQL: localhost:3306
+- Redis: localhost:6379
 
-### Sin Docker
-
+**Comandos útiles:**
 ```bash
-composer install
-cp .env.example .env
-php artisan key:generate
-
-# SQLite para desarrollo
-touch database/database.sqlite
-php artisan migrate --seed
-
-php artisan serve
-# → http://localhost:8000
+docker-compose down              # Detener
+docker-compose restart           # Reiniciar
+docker-compose exec app bash     # Entrar al contenedor
 ```
 
 ## ☁️ Deployment AWS
 
-### Primera Vez (Setup Completo)
+### Primera Vez - Setup Completo
 
-Ver guía detallada en **[DEPLOYMENT.md](DEPLOYMENT.md)** que incluye:
-- Creación de infraestructura AWS (RDS, Redis, ECR, ECS, ALB)
-- Configuración de security groups y networking
-- Setup de GitHub Actions
-- Variables de entorno para producción
+Ver **[QUICK_START.md](QUICK_START.md)** para guía paso a paso que incluye:
+- VPC, Subnets y Security Groups
+- RDS MySQL (base de datos)
+- ElastiCache Redis (cache)
+- ECR (registro de imágenes Docker)
+- Application Load Balancer
+- ECS Fargate (contenedores)
+- Task Definition y Service
 
-### Updates (GitHub Actions Automático)
+**O ver [DEPLOYMENT.md](DEPLOYMENT.md)** para explicación detallada de cada componente.
+
+### Updates - GitHub Actions (Automático)
 
 ```bash
-# Push a main deploya a producción automáticamente
+# Push a main despliega a producción automáticamente
 git add .
 git commit -m "Update feature"
 git push origin main
 ```
 
-### Manual Deployment
+### Updates - Manual
 
 ```bash
-# Build y push
-make build-prod
-make push-prod
+# 1. Build imagen Docker
+docker build -t shrt-backend:latest .
 
-# Desplegar
-make deploy-prod
+# 2. Login a ECR
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com
 
-# O todo en uno
-make deploy
+# 3. Tag y push
+docker tag shrt-backend:latest $(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com/shrt-backend:latest
+docker push $(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-1.amazonaws.com/shrt-backend:latest
+
+# 4. Forzar nuevo deployment
+aws ecs update-service \
+  --cluster shrt-production-cluster \
+  --service shrt-production-service \
+  --force-new-deployment
 ```
 
 ## 🧪 Testing
@@ -109,23 +148,27 @@ php artisan test --coverage
 ## 📊 Comandos Útiles
 
 ```bash
-# Development
-make dev          # Iniciar servidor de desarrollo
-make test         # Ejecutar tests
-make logs         # Ver logs
+# Development Local
+php artisan serve                    # Iniciar servidor
+php artisan test                     # Ejecutar tests
+docker-compose logs -f               # Ver logs (con Docker)
 
 # AWS Monitoring
 aws logs tail /ecs/shrt-backend-production --follow
 aws ecs describe-services --cluster shrt-production-cluster --services shrt-production-service
+aws ecs list-tasks --cluster shrt-production-cluster --service-name shrt-production-service
 
 # Database
-php artisan migrate
-php artisan db:seed
-php artisan tinker
+php artisan migrate                  # Ejecutar migraciones
+php artisan migrate:fresh --seed     # Reset completo
+php artisan tinker                   # Console interactiva
 
-# Cache
-php artisan optimize:clear
-php artisan cache:clear
+# Cache y optimización
+php artisan optimize:clear           # Limpiar todo
+php artisan cache:clear              # Solo cache
+php artisan config:clear             # Solo config
+php artisan route:clear              # Solo routes
+php artisan scribe:generate          # Regenerar docs
 ```
 
 ## 🔍 Health Checks
