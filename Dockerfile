@@ -107,10 +107,10 @@ RUN echo "worker_processes auto;" > /etc/nginx/nginx.conf \
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 # Copy entrypoint script
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh \
-    && ls -la /usr/local/bin/entrypoint.sh \
-    && head -1 /usr/local/bin/entrypoint.sh
+COPY --chmod=755 docker/entrypoint.sh /entrypoint.sh
+RUN ls -la /entrypoint.sh \
+    && head -1 /entrypoint.sh \
+    && file /entrypoint.sh
 
 # Health check - use simpler endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
@@ -119,4 +119,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 EXPOSE 80
 
 # Use entrypoint to configure environment before starting services
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/entrypoint.sh"]
