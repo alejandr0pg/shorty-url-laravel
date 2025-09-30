@@ -102,7 +102,9 @@ RUN echo "worker_processes auto;" > /etc/nginx/nginx.conf \
     && echo "pid /var/run/nginx.pid;" >> /etc/nginx/nginx.conf \
     && echo "events { worker_connections 1024; }" >> /etc/nginx/nginx.conf \
     && echo "http { include /etc/nginx/mime.types; default_type application/octet-stream;" >> /etc/nginx/nginx.conf \
-    && echo "sendfile on; keepalive_timeout 65; include /etc/nginx/conf.d/*.conf; }" >> /etc/nginx/nginx.conf
+    && echo "sendfile on; keepalive_timeout 65; include /etc/nginx/conf.d/*.conf; }" >> /etc/nginx/nginx.conf \
+    && echo "Testing nginx configuration..." \
+    && nginx -t
 
 # Copy supervisor configuration
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
