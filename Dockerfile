@@ -64,7 +64,10 @@ RUN cp .env.example .env \
 
 # Complete composer installation and generate docs (while dev deps are available)
 RUN composer dump-autoload --optimize \
-    && (php artisan scribe:generate --no-interaction || echo "Scribe generation completed with warnings - continuing build")
+    && (php artisan scribe:generate --no-interaction || echo "Scribe generation completed with warnings - continuing build") \
+    && echo "📚 Verifying Scribe documentation was generated..." \
+    && ls -la storage/app/private/scribe/ || echo "⚠️  Scribe directory not found" \
+    && ls -la resources/views/scribe/ || echo "⚠️  Scribe views directory not found"
 
 # Remove dev dependencies and re-optimize for production
 RUN composer install --no-dev --optimize-autoloader --no-scripts --no-interaction \
@@ -72,6 +75,7 @@ RUN composer install --no-dev --optimize-autoloader --no-scripts --no-interactio
 
 # Create required directories and set permissions (www-data user already exists in php:8.3-fpm-alpine)
 RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views \
+    && mkdir -p storage/app/private/scribe \
     && mkdir -p bootstrap/cache \
     && mkdir -p /var/log/supervisor /var/run /var/log/php-fpm /var/log/nginx /run/php \
     && touch database/database.sqlite \

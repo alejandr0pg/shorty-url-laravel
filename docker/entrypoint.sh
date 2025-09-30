@@ -54,10 +54,28 @@ fi
 # Create required directories with proper ownership
 echo "📁 Setting up storage directories..."
 mkdir -p storage/framework/{sessions,views,cache,compiled}
-mkdir -p storage/{app,logs,app/public}
+mkdir -p storage/{app,logs,app/public,app/private/scribe}
 mkdir -p bootstrap/cache
 mkdir -p /var/log/php-fpm
 mkdir -p /run/php
+
+# Verify Scribe documentation files exist
+echo "📚 Verifying Scribe documentation files..."
+if [ -f "storage/app/private/scribe/collection.json" ]; then
+    echo "✅ Scribe collection.json found"
+else
+    echo "⚠️  Scribe collection.json not found - docs may not be available"
+fi
+if [ -f "storage/app/private/scribe/openapi.yaml" ]; then
+    echo "✅ Scribe openapi.yaml found"
+else
+    echo "⚠️  Scribe openapi.yaml not found - docs may not be available"
+fi
+if [ -f "resources/views/scribe/index.blade.php" ]; then
+    echo "✅ Scribe index.blade.php found"
+else
+    echo "⚠️  Scribe index.blade.php not found - docs may not be available"
+fi
 
 # Set correct permissions for Laravel
 echo "🔐 Setting permissions..."
