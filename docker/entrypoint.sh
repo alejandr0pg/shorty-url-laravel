@@ -127,14 +127,25 @@ else
     echo "⚠️  Storage link failed, but continuing..."
 fi
 
+# Regenerate Scribe docs if APP_URL changed (production only)
+if [ "$APP_ENV" = "production" ] && [ "$APP_URL" != "http://localhost" ]; then
+    echo "📚 Regenerating API documentation with correct URL..."
+    if php artisan scribe:generate --no-interaction > /dev/null 2>&1; then
+        echo "✅ API documentation regenerated with URL: $APP_URL"
+    else
+        echo "⚠️  Scribe regeneration failed, using cached docs"
+    fi
+fi
+
 # Cache for production only after successful setup
 if [ "$APP_ENV" = "production" ]; then
     echo "⚡ Optimizing for production..."
-    # Cache configs, views, but skip route caching to avoid docs route issues
+    # Cache configs, views, events, and routes
     php artisan config:cache
     php artisan view:cache
     php artisan event:cache
-    echo "✅ Production optimizations complete (routes not cached to preserve docs)"
+    php artisan route:cache
+    echo "✅ Production optimizations complete (all caches ready)"
 fi
 
 # Final health check
