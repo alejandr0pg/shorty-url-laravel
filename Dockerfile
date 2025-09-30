@@ -37,8 +37,9 @@ RUN docker-php-ext-install \
     zip \
     opcache
 
-# Install Redis extension via apk
-RUN apk add --no-cache php83-redis
+# Install Redis extension via PECL
+RUN pecl install redis \
+    && docker-php-ext-enable redis
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
