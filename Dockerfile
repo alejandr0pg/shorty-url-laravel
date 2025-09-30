@@ -106,9 +106,9 @@ RUN echo "worker_processes auto;" > /etc/nginx/nginx.conf \
 # Copy supervisor configuration
 COPY docker/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-# Copy entrypoint script
-COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh \
+# Setup entrypoint script (already copied with COPY . .)
+RUN cp /var/www/html/docker/entrypoint.sh /entrypoint.sh \
+    && chmod +x /entrypoint.sh \
     && ls -la /entrypoint.sh \
     && echo "Entrypoint first line:" \
     && head -1 /entrypoint.sh \
